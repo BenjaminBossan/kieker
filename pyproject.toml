@@ -9,6 +9,9 @@ package-dir = {"" = "src"}
 where = ["src"]
 include = ["kieker*"]
 
+[tool.setuptools.package-data]
+kieker = ["schema.sql"]
+
 [project]
 name = "kieker"
 dynamic = ["version"]
