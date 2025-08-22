@@ -49,11 +49,6 @@ def db_path(work_dir: Path) -> Path:
     return path
 
 
-def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, object]:
-    fields = [column[0] for column in cursor.description]
-    return {key: value for key, value in zip(fields, row)}
-
-
 class PrettyRow(sqlite3.Row):
     """A row that can be printed nicely."""
 

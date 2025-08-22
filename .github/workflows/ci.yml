@@ -21,6 +21,6 @@ jobs:
       - name: Ruff lint
         run: ruff check .
       - name: Mypy
-        run: mypy --strict .
+        run: mypy --strict --exclude build .
       - name: Pytest
         run: pytest
