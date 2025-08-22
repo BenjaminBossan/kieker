@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.1.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kieker*"]
+
+[project]
+name = "kieker"
+dynamic = ["version"]
+requires-python = ">=3.10"
+dependencies = [
+    "libcst>=1.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.12.10",
+    "mypy>=1.17.1",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+]
+
+[project.scripts]
+kieker = "kieker.cli:main"
+
+[tool.ruff.lint]
+preview = true
+explicit-preview-rules = true
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+known-first-party = ["kieker"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=src/kieker --cov-report=term-missing"
