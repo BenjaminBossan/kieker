@@ -1,15 +1,14 @@
 import os
+import sqlite3
 
 
 class TestFunctions:
-    def test_find_to_numpy(self, conn):
-        query = (
-            """
+    def test_find_to_numpy(self, conn: sqlite3.Connection) -> None:
+        query = """
             SELECT *
             FROM functions
             WHERE qualified_name = 'skorch.utils.to_numpy'
             """
-        )
         rows = conn.execute(query).fetchall()
         assert len(rows) == 1
 

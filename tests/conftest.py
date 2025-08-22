@@ -2,7 +2,7 @@ import sqlite3
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import pytest
 
@@ -29,7 +29,7 @@ def _create_db(path: Path) -> Path:
         paths=[path / "skorch"],
         roots_str=[str(path)],
         output=DBPATH,
-        exclude=[path / "skorch" / "tests"],
+        exclude=[str(path / "skorch" / "tests")],
     )
     return DBPATH
 
@@ -49,7 +49,7 @@ def db_path(work_dir: Path) -> Path:
     return path
 
 
-def dict_factory(cursor, row):
+def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, object]:
     fields = [column[0] for column in cursor.description]
     return {key: value for key, value in zip(fields, row)}
 
@@ -68,9 +68,10 @@ class PrettyRow(sqlite3.Row):
         for key in self.keys():
             part = f"{key}={self[key]!r}"
             parts.append(self.trim(part))
-        return f"{self.__class__.__name__}(\n  {',\n  '.join(parts)}\n)"
+        joined = ",\n  ".join(parts)
+        return f"{self.__class__.__name__}(\n  {joined}\n)"
 
-    def __getattr__(self, item: str):
+    def __getattr__(self, item: str) -> Any:
         """Allow attribute access like `row.name`."""
         if item in self.keys():
             return self[item]
