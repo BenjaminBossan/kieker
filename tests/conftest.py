@@ -18,13 +18,9 @@ REPO_TAG = "v1.2.0"
 
 def _create_db(path: Path) -> Path:
     # Shallow clone at tag
-    try:
-        subprocess.check_call(
-            ["git", "clone", "--depth", "1", "--branch", REPO_TAG, REPO_URL, str(path)]
-        )
-    except (OSError, subprocess.CalledProcessError) as exc:
-        pytest.skip(f"Could not clone {REPO_URL}@{REPO_TAG}: {exc}")
-
+    subprocess.check_call(
+        ["git", "clone", "--depth", "1", "--branch", REPO_TAG, REPO_URL, str(path)]
+    )
     create(
         paths=[path / "skorch"],
         roots_str=[str(path)],
