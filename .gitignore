@@ -6,5 +6,7 @@ tmp/
 
 *.py[cod]
 *.egg
+.coverage
+*.egg-info
 build
 htmlcov

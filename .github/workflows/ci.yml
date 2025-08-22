@@ -23,4 +23,4 @@ jobs:
       - name: Mypy
         run: mypy --strict --exclude build .
       - name: Pytest
-        run: pytest
+        run: pytest tests/
