@@ -4,7 +4,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS modules (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  package          TEXT NOT NULL,
+  module           TEXT NOT NULL,
   file             TEXT NOT NULL,
   file_hash        TEXT NOT NULL,
   is_external      INTEGER NOT NULL DEFAULT 0
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS function_metrics (
 );
 
 -- Helpful indexes
-CREATE INDEX IF NOT EXISTS idx_modules_package ON modules(package);
+CREATE INDEX IF NOT EXISTS idx_modules_module ON modules(module);
 CREATE INDEX IF NOT EXISTS idx_functions_qname  ON functions(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_classes_qname    ON classes(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_calls_caller     ON calls(caller_id);
@@ -129,5 +129,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_parameters_func_name_kind
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inheritance_sub_super
   ON inheritance(subclass_id, superclass_name);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_modules_package
-  ON modules(package);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_modules_module
+  ON modules(module);

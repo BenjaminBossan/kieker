@@ -57,10 +57,10 @@ EXAMPLES: list[dict[str, str]] = [
         "title": "Count functions per module",
         "sql": textwrap.dedent(
             """
-            SELECT m.package, COUNT(f.id) AS function_count
+            SELECT m.module, COUNT(f.id) AS function_count
             FROM modules m
             JOIN functions f ON f.module_id = m.id
-            GROUP BY m.package
+            GROUP BY m.module
             ORDER BY function_count DESC;
             """
         ).strip(),

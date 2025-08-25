@@ -27,7 +27,7 @@ class Location:
 
 @dataclass
 class ModuleInfo:
-    package: str  # dotted, best-effort from path
+    module: str  # dotted, best-effort from path
     file: str  # path string
     is_external: bool = False  # always False for parsed source
     primary_file: Optional[str] = None
@@ -180,7 +180,7 @@ class _ModuleCollector(cst.CSTVisitor):
 
         # Outputs
         self.module: ModuleInfo = ModuleInfo(
-            package=module_name, file=filename, primary_file=filename
+            module=module_name, file=filename, primary_file=filename
         )
         self.classes: list[ClassInfo] = []
         self.functions: list[FunctionInfo] = []
