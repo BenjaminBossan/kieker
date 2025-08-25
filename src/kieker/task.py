@@ -135,7 +135,14 @@ class TaskRunner:
                 elif stat.status == TaskStatus.CANCELED:
                     summary[key].canceled += 1
                 summary[key].user_time += stat.end - stat.start
-                if summary[key]._start is None or stat.start < summary[key]._start:
+                start = summary[key]._start
+                if start is None:
                     summary[key]._start = stat.start
-                if summary[key]._end is None or stat.end > summary[key]._end:
+                elif stat.start < start:
+                    summary[key]._start = stat.start
+
+                end = summary[key]._end
+                if end is None:
+                    summary[key]._end = stat.end
+                elif stat.end > end:
                     summary[key]._end = stat.end
