@@ -1,10 +1,12 @@
 import datetime as dt
 import enum
 import logging
+import multiprocessing
 import sys
 import time
-from dataclasses import dataclass
-from typing import Literal, Sequence
+from dataclasses import dataclass, field
+from multiprocessing import cpu_count
+from typing import Sequence
 
 
 logger = logging.getLogger()
@@ -33,7 +35,15 @@ class SummaryStat:
     success: int = 0
     failed: int = 0
     canceled: int = 0
-    total_time: float = 0.0
+    user_time: float = 0.0
+    _start: float | None = field(default=None, init=False, repr=False)
+    _end: float | None = field(default=None, init=False, repr=False)
+
+    @property
+    def wall_time(self) -> float:
+        if self._start is None or self._end is None:
+            return 0.0
+        return self._end - self._start
 
 
 class Task:
@@ -66,33 +76,43 @@ class Task:
         raise NotImplementedError("TODO")
 
 
+def _run_task(task: "Task") -> "Task":
+    """Helper to run a task in a separate process."""
+    task._run()
+    return task
+
+
 class TaskRunner:
-    """TODO"""
+    """Run tasks either sequentially or using multiprocessing."""
 
     def __init__(
         self,
         tasks: Sequence[Task],
-        run_type: Literal["sequential"] = "sequential",
+        jobs: int = 1,
         progress_bar: bool = True,
     ) -> None:
-        self.tasks = tasks
-        self.run_type = run_type
+        self.tasks = list(tasks)
+        self.jobs = jobs if jobs != 0 else cpu_count() or 1
         self.progress_bar = progress_bar
         self.summary: dict[str, SummaryStat] = {}
 
     def run(self) -> None:
-        """TODO"""
-        if self.run_type == "sequential":
+        """Run all tasks."""
+        if self.jobs == 1:
             for task in self.tasks:
                 task._run()
                 if self.progress_bar:
                     # ensure that there is a new line after each task
                     logger.info(f"Completed {task}")
+            completed = self.tasks
         else:
-            raise ValueError(
-                f"{self.__class__.__name__} got unknown argument for run_type: {self.run_type}. Valid arguments: 'sequential'."
-            )
-        self.collect_stats(self.tasks)
+            completed = []
+            with multiprocessing.Pool(processes=self.jobs) as pool:
+                for task in pool.imap_unordered(_run_task, self.tasks):
+                    completed.append(task)
+                    if self.progress_bar:
+                        logger.info(f"Completed {task}")
+        self.collect_stats(completed)
 
     def collect_stats(self, tasks: Sequence[Task]) -> None:
         """Collect stats from all tasks."""
@@ -114,4 +134,8 @@ class TaskRunner:
                     summary[key].failed += 1
                 elif stat.status == TaskStatus.CANCELED:
                     summary[key].canceled += 1
-                summary[key].total_time += stat.end - stat.start
+                summary[key].user_time += stat.end - stat.start
+                if summary[key]._start is None or stat.start < summary[key]._start:
+                    summary[key]._start = stat.start
+                if summary[key]._end is None or stat.end > summary[key]._end:
+                    summary[key]._end = stat.end
