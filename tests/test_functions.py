@@ -27,4 +27,4 @@ class TestFunctions:
         assert row.end_col == 20
         assert row.property_kind is None
         assert len(row.docstring.split("\n")) == 7
-        assert row.def_text.startswith("def to_numpy(X)")
+        assert row.def_text.strip().startswith("def to_numpy(X)")
