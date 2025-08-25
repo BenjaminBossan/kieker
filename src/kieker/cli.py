@@ -68,6 +68,19 @@ EXAMPLES: list[dict[str, str]] = [
             """
         ).strip(),
     },
+    {
+        "id": "5",
+        "title": "Count functions per module",
+        "sql": textwrap.dedent(
+            """
+            SELECT m.package, COUNT(f.id) AS function_count
+            FROM modules m
+            JOIN functions f ON f.module_id = m.id
+            GROUP BY m.package
+            ORDER BY function_count DESC;
+            """
+        ).strip(),
+    },
 ]
 
 
@@ -110,6 +123,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p_create.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase logging verbosity."
     )
+    p_create.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="Number of worker processes (default: 1, 0 uses CPU count).",
+    )
 
     # examples
     p_examples = sub.add_parser(
@@ -138,6 +158,7 @@ def create(
     roots_str: list[str] | None = None,
     schema: Path | None = None,
     exclude: list[str] | None = None,
+    jobs: int = 1,
 ) -> TaskRunner:
     schema = schema or Path(__file__).with_name("schema.sql")
     if roots_str:
@@ -153,7 +174,7 @@ def create(
         WriteToDbTask(task, output, schema_path=schema, override=True)
         for task in parse_tasks
     )
-    task_runner = TaskRunner(tasks=list(write_tasks), run_type="sequential")
+    task_runner = TaskRunner(tasks=list(write_tasks), jobs=jobs)
     task_runner.run()
     return task_runner
 
@@ -171,18 +192,24 @@ def cmd_create(args: argparse.Namespace) -> None:
         for task in tasks:
             logger.debug("  %s", task)
     else:
-        task_runner = create(args.paths, args.output, args.root, args.schema)
+        task_runner = create(
+            args.paths, args.output, args.root, args.schema, jobs=args.jobs
+        )
         logger.info("Wrote database to %s", args.output)
         # log summary statistics
         for key, summary in task_runner.summary.items():
             logger.debug(
-                "%s: %d tasks, %d success, %d failed, %d canceled, total time %.2f seconds",
+                (
+                    "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
+                    "seconds, wall time %.2f seconds"
+                ),
                 key,
                 summary.count,
                 summary.success,
                 summary.failed,
                 summary.canceled,
-                summary.total_time,
+                summary.user_time,
+                summary.wall_time,
             )
 
 

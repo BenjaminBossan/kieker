@@ -28,6 +28,10 @@ TODO
 
 python cli.py create src/ -o code.sqlite
 
+Use multiple processes with `-j`/`--jobs` (defaults to 1; `0` uses all CPUs):
+
+python cli.py create src/ -o code.sqlite -j 4
+
 The CLI will treat each provided path as a package root. Use `--root` to
 specify different roots explicitly (repeatable):
 

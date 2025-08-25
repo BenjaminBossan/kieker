@@ -57,3 +57,26 @@ def foo():
         assert row[0] == "mod.foo"
     finally:
         con.close()
+
+
+def test_create_parallel_jobs(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "mod.py").write_text(
+        """\
+def foo():
+    pass
+"""
+    )
+
+    db = tmp_path / "out.sqlite"
+    create(paths=[pkg], output=db, jobs=2)
+
+    con = sqlite3.connect(db)
+    try:
+        row = con.execute(
+            "SELECT qualified_name FROM functions WHERE name = 'foo'",
+        ).fetchone()
+        assert row[0] == "mod.foo"
+    finally:
+        con.close()
