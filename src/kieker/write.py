@@ -105,18 +105,18 @@ class WriteToDbTask(Task):
         assert file_hash is not None, "Module info must have a file hash"
         conn.execute(
             """
-            INSERT INTO modules (package, file, file_hash, is_external)
+            INSERT INTO modules (module, file, file_hash, is_external)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(package) DO UPDATE SET
+            ON CONFLICT(module) DO UPDATE SET
               file       = excluded.file,
               file_hash  = excluded.file_hash,
               is_external= excluded.is_external
             """,
-            (mi.package, mi.file, file_hash, 0),
+            (mi.module, mi.file, file_hash, 0),
         )
         # Fetch (or re-fetch) the id
         row = conn.execute(
-            "SELECT id FROM modules WHERE package = ?", (mi.package,)
+            "SELECT id FROM modules WHERE module = ?", (mi.module,)
         ).fetchone()
         return int(row[0])
 

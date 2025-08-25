@@ -111,21 +111,21 @@ _version._cmpkey             51
 ### Show the ten modules with the highest amount of functions
 
 ```sh
-sqlite3 -header -column result.sqlite "SELECT m.package, COUNT(f.id) AS function_count
+sqlite3 -header -column result.sqlite "SELECT m.module, COUNT(f.id) AS function_count
 FROM modules m
 JOIN functions f ON f.module_id = m.id
-GROUP BY m.package
+GROUP BY m.module
 ORDER BY function_count DESC
 LIMIT 10;"
 ```
 
 ```
-package                   function_count
+module                    function_count
 ------------------------  --------------
-net                       92            
-callbacks.logging         58            
-_version                  48            
-hf                        47            
+net                       92
+callbacks.logging         58
+_version                  48
+hf                        47
 utils                     45            
 callbacks.training        42            
 llm.classifier            38            
