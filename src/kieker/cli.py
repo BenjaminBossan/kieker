@@ -84,8 +84,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--root",
         "-r",
         action="append",
-        required=True,
-        help="Package root (repeatable). Example: -r src -r .",
+        help="Package root (repeatable). Defaults to each given path.",
     )
     p_create.add_argument(
         "--exclude",
@@ -135,13 +134,16 @@ def _validate_roots(root_strs: list[str]) -> list[Path]:
 
 def create(
     paths: list[Path],
-    roots_str: list[str],
     output: Path,
+    roots_str: list[str] | None = None,
     schema: Path | None = None,
     exclude: list[str] | None = None,
 ) -> TaskRunner:
     schema = schema or Path(__file__).with_name("schema.sql")
-    roots = _validate_roots(roots_str)
+    if roots_str:
+        roots = _validate_roots(roots_str)
+    else:
+        roots = [Path(p).resolve() for p in paths]
     exclude_paths = [Path(x).resolve() for x in (exclude or [])]
     ingest_tasks = gather_read_file_tasks(
         [Path(p) for p in paths], exclude=exclude_paths
@@ -169,7 +171,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         for task in tasks:
             logger.debug("  %s", task)
     else:
-        task_runner = create(args.paths, args.root, args.output, args.schema)
+        task_runner = create(args.paths, args.output, args.root, args.schema)
         logger.info("Wrote database to %s", args.output)
         # log summary statistics
         for key, summary in task_runner.summary.items():
