@@ -23,6 +23,7 @@ def _create_db(path: Path) -> Path:
     )
     create(
         paths=[path / "skorch"],
+        roots_str=[str(path)],
         output=DBPATH,
         exclude=[str(path / "skorch" / "tests")],
     )
