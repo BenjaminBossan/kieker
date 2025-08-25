@@ -41,3 +41,6 @@ known-first-party = ["kieker"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/kieker --cov-report=term-missing"
+
+[tool.mypy]
+exclude = "tests"

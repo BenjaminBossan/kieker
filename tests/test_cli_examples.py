@@ -1,4 +1,3 @@
-# mypy: ignore-errors
 import argparse
 import logging
 import sqlite3
