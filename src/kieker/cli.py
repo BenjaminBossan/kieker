@@ -193,7 +193,12 @@ def cmd_create(args: argparse.Namespace) -> None:
             logger.debug("  %s", task)
     else:
         task_runner = create(
-            args.paths, args.output, args.root, args.schema, jobs=args.jobs
+            paths=args.paths,
+            output=args.output,
+            roots_str=args.root,
+            schema=args.schema,
+            exclude=args.exclude,
+            jobs=args.jobs,
         )
         logger.info("Wrote database to %s", args.output)
         # log summary statistics

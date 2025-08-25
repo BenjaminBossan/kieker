@@ -29,11 +29,10 @@ def _is_valid_file(filename: str | Path) -> bool:
 
 
 def gather_read_file_tasks(
-    paths: Sequence[Path], exclude: Sequence[Path] | None = None
+    paths: Sequence[Path], exclude: Sequence[Path]
 ) -> Iterator[ReadFileTask]:
     """Expand the given paths into a list of `ReadFileTask`s (recursively)."""
-    exclude = [p.resolve() for p in (exclude or [])]
-
+    exclude = list(exclude)
     for path in paths:
         path = path.resolve()
         if any(str(path).startswith(str(ex)) for ex in exclude):
