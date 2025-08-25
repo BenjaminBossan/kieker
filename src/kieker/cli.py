@@ -19,43 +19,28 @@ logger.setLevel(logging.INFO)
 
 EXAMPLES: list[dict[str, str]] = [
     {
-        "id": "1",
-        "title": "List the name and modules of all classes",
-        "sql": textwrap.dedent(
-            """
-            SELECT c.name AS class_name, m.package AS module
-            FROM classes c
-            JOIN modules m ON m.id = c.module_id
-            ORDER BY m.package, c.name;
-            """
-        ).strip(),
-    },
-    {
-        "id": "2",
         "title": "Print function definition and location of function called foobar",
         "sql": textwrap.dedent(
             """
             SELECT file, start_line, end_line, def_text
             FROM functions
-            WHERE qualified_name like "%foobar";
+            WHERE qualified_name like '%foobar';
             """
         ).strip(),
     },
     {
-        "id": "3",
         "title": "List function names and locations of functions that call foo.bar",
         "sql": textwrap.dedent(
             """
-            SELECT f.qualified_name, f.file, f.start_line, f.end_line
+            SELECT f.file, f.start_line, f.end_line, f.qualified_name
             FROM calls c
             JOIN functions f ON f.id = c.caller_id
             WHERE c.callee_repr = 'foo.bar'
-            ORDER BY f.qualified_name;
+            ORDER BY f.file, f.start_line;
             """
         ).strip(),
     },
     {
-        "id": "4",
         "title": "Functions longer than 50 lines and missing a docstring",
         "sql": textwrap.dedent(
             """
@@ -69,7 +54,6 @@ EXAMPLES: list[dict[str, str]] = [
         ).strip(),
     },
     {
-        "id": "5",
         "title": "Count functions per module",
         "sql": textwrap.dedent(
             """
@@ -81,7 +65,25 @@ EXAMPLES: list[dict[str, str]] = [
             """
         ).strip(),
     },
+    {
+        "title": "List the location and name of all classes that inherit from class 'Foobar'",
+        "sql": textwrap.dedent(
+            """
+            SELECT c.name AS subclass_name,
+              c.file,
+              c.start_line,
+              c.end_line,
+              c.qualified_name
+            FROM classes c
+            JOIN inheritance i ON i.subclass_id = c.id
+            WHERE i.superclass_name = 'Foobar'
+            ORDER BY c.file, c.start_line;
+            """
+        ).strip(),
+    },
 ]
+for idx, row in enumerate(EXAMPLES):
+    row["id"] = str(idx)
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
