@@ -282,8 +282,8 @@ class _ModuleCollector(cst.CSTVisitor):
             qualified_name=qname,
             location=_to_location(self.filename, pos),
             docstring=doc,
-            def_text=self._module.code_for_node(node).lstrip(),
-            body_text=self._module.code_for_node(node.body),
+            def_text="\n" + self._module.code_for_node(node).lstrip(),
+            body_text="\n" + self._module.code_for_node(node.body),
         )
         self.classes.append(cls)
         self._class_stack.append(cls)
@@ -362,8 +362,8 @@ class _ModuleCollector(cst.CSTVisitor):
             is_property=is_prop,
             is_async=bool(node.asynchronous),
             location=_to_location(self.filename, pos),
-            def_text=self._module.code_for_node(node).lstrip(),
-            body_text=self._module.code_for_node(node.body),
+            def_text="\n" + self._module.code_for_node(node).lstrip(),
+            body_text="\n" + self._module.code_for_node(node.body),
             property_kind=property_kind,
             docstring=doc,
         )
