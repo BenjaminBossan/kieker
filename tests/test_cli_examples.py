@@ -58,6 +58,7 @@ def foo():
     finally:
         con.close()
 
+
 def test_create_parallel_jobs(tmp_path: Path) -> None:
     pkg = tmp_path / "pkg"
     pkg.mkdir()
