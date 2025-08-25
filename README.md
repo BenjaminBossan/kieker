@@ -71,9 +71,8 @@ Open the database with the `sqlite3` command line tool or any other tool of your
 - Refactoring (writing code changes) is not supported in the MVP — this is strictly a read/query tool.
 
 ## Development
+Run formatting and type checks:
 
 ```sh
-mypy --strict src/
-ruff check src/
-ruff format src/
+make checks
 ```
