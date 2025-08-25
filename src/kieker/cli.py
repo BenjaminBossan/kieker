@@ -81,6 +81,51 @@ EXAMPLES: list[dict[str, str]] = [
             """
         ).strip(),
     },
+    {
+        "title": "Find functions with highest number of parameters",
+        "sql": textwrap.dedent(
+            """
+            WITH param_counts AS (
+              SELECT p.function_id, COUNT(*) AS nparams
+              FROM parameters p
+              GROUP BY p.function_id
+            )
+            SELECT f.qualified_name, nparams
+            FROM param_counts pc
+            JOIN functions f ON f.id = pc.function_id
+            WHERE pc.nparams >= 8
+            ORDER BY nparams DESC, f.qualified_name
+            LIMIT 10;
+            """
+        ).strip(),
+    },
+    {
+        "title": "Find all classes and functions using a specific decorator",
+        "sql": textwrap.dedent(
+            """
+            SELECT (CASE d.target_kind WHEN 'class' THEN 'class' ELSE 'function' END) AS kind,
+                   (CASE d.target_kind
+                      WHEN 'class'    THEN (SELECT qualified_name FROM classes  WHERE id = d.target_id)
+                      ELSE                 (SELECT qualified_name FROM functions WHERE id = d.target_id)
+                    END) AS target_qname, d.file
+            FROM decorators d
+            WHERE d.name_repr = 'foobar'
+            ORDER BY kind, target_qname;
+            """
+        ).strip(),
+    },
+    {
+        "title": "Find all modules that import a specific package",
+        "sql": textwrap.dedent(
+            """
+            SELECT m.module, i.imported, i.file, i.start_line
+            FROM imports i
+            JOIN modules m ON m.id = i.module_id
+            WHERE i.imported LIKE 'foobar.%'
+            ORDER BY m.module, i.file, i.start_line;
+            """
+        ).strip(),
+    },
 ]
 for idx, row in enumerate(EXAMPLES):
     row["id"] = str(idx)

@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS function_metrics (
 );
 
 -- Helpful indexes
-CREATE INDEX IF NOT EXISTS idx_modules_module ON modules(module);
+CREATE INDEX IF NOT EXISTS idx_modules_module   ON modules(module);
 CREATE INDEX IF NOT EXISTS idx_functions_qname  ON functions(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_classes_qname    ON classes(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_calls_caller     ON calls(caller_id);

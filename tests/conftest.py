@@ -14,6 +14,7 @@ HERE = Path(__file__).parent
 DBPATH = HERE / DBNAME
 REPO_URL = "https://github.com/skorch-dev/skorch.git"
 REPO_TAG = "v1.2.0"
+JOBS = 4
 
 
 def _create_db(path: Path) -> Path:
@@ -23,9 +24,9 @@ def _create_db(path: Path) -> Path:
     )
     create(
         paths=[path / "skorch"],
-        roots_str=[str(path)],
         output=DBPATH,
         exclude=[str(path / "skorch" / "tests")],
+        jobs=JOBS,
     )
     return DBPATH
 

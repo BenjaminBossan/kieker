@@ -156,3 +156,71 @@ NeuralNetBinaryClassifier  /tmp/skorch/classifier.py     266         386       c
 GPBase                     /tmp/skorch/probabilistic.py  34          392       probabilistic.GPBase                
 NeuralNetRegressor         /tmp/skorch/regressor.py      39          85        regressor.NeuralNetRegressor 
 ```
+
+### Find functions with highest number of parameters
+
+```sh
+sqlite3 -header -column result.sqlite "WITH param_counts AS (
+  SELECT p.function_id, COUNT(*) AS nparams
+  FROM parameters p
+  GROUP BY p.function_id
+)
+SELECT f.qualified_name, nparams
+FROM param_counts pc
+JOIN functions f ON f.id = pc.function_id
+WHERE pc.nparams >= 8
+ORDER BY nparams DESC, f.qualified_name
+LIMIT 10;"
+```
+
+```
+qualified_name                                  nparams
+----------------------------------------------  -------
+net.NeuralNet.__init__                          21     
+hf.HuggingfaceTokenizer.__init__                16     
+callbacks.training.Checkpoint.__init__          15     
+llm.classifier.FewShotClassifier.__init__       13     
+callbacks.training.TrainEndCheckpoint.__init__  12     
+_doctor.SkorchDoctor.plot_activations           11     
+_doctor.SkorchDoctor.plot_gradients             11     
+callbacks.logging.MlflowLogger.__init__         11     
+hf.HuggingfacePretrainedTokenizer.__init__      11     
+llm.classifier.ZeroShotClassifier.__init__      11
+```
+
+### Find all classes and functions using the `contextmanager` decorator
+
+```sh
+sqlite3 -header -column result.sqlite "SELECT (CASE d.target_kind WHEN 'class' THEN 'class' ELSE 'function' END) AS kind,
+       (CASE d.target_kind
+          WHEN 'class'    THEN (SELECT qualified_name FROM classes  WHERE id = d.target_id)
+          ELSE                 (SELECT qualified_name FROM functions WHERE id = d.target_id)
+        END) AS target_qname, d.file  
+FROM decorators d
+WHERE d.name_repr = 'contextmanager'
+ORDER BY kind, target_qname;"
+```
+
+```
+kind      target_qname                               file                            
+--------  -----------------------------------------  --------------------------------
+function  callbacks.scoring._cache_net_forward_iter  /tmp/skorch/callbacks/scoring.py
+function  net.NeuralNet._current_init_context        /tmp/skorch/net.py              
+function  utils.open_file_like                       /tmp/skorch/utils.py 
+```
+
+### Find all modules that import the `tabulate` package
+
+```sh
+sqlite3 -header -column result.sqlite "SELECT m.module, i.imported, i.file, i.start_line
+FROM imports i
+JOIN modules m ON m.id = i.module_id
+WHERE i.imported LIKE 'tabulate.%'             
+ORDER BY m.module, i.file, i.start_line;"
+```
+
+```
+module             imported           file                              start_line
+-----------------  -----------------  --------------------------------  ----------
+callbacks.logging  tabulate.tabulate  /tmp/skorch/callbacks/logging.py  13
+```
