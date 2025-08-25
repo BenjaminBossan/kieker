@@ -26,7 +26,12 @@ TODO
 
 ### Create the database
 
-python cli.py create src/ --root src -o code.sqlite
+python cli.py create src/ -o code.sqlite
+
+The CLI will treat each provided path as a package root. Use `--root` to
+specify different roots explicitly (repeatable):
+
+python cli.py create src/kieker --root src -o code.sqlite
 
 This will:
 
