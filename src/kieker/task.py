@@ -6,7 +6,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from multiprocessing import cpu_count
-from typing import Sequence
+from typing import Generic, Sequence, TypeVar
 
 
 logger = logging.getLogger()
@@ -76,35 +76,39 @@ class Task:
         raise NotImplementedError("TODO")
 
 
-def _run_task(task: "Task") -> "Task":
+TTask = TypeVar("TTask", bound="Task")
+
+
+def _run_task(task: TTask) -> TTask:
     """Helper to run a task in a separate process."""
     task._run()
     return task
 
 
-class TaskRunner:
+class TaskRunner(Generic[TTask]):
     """Run tasks either sequentially or using multiprocessing."""
 
     def __init__(
         self,
-        tasks: Sequence[Task],
+        tasks: Sequence[TTask],
         jobs: int = 1,
         progress_bar: bool = True,
     ) -> None:
-        self.tasks = list(tasks)
+        self.tasks: list[TTask] = list(tasks)
         self.jobs = jobs if jobs != 0 else cpu_count() or 1
         self.progress_bar = progress_bar
         self.summary: dict[str, SummaryStat] = {}
 
-    def run(self) -> None:
-        """Run all tasks."""
+    def run(self) -> list[TTask]:
+        """Run all tasks and return the completed ones."""
+        completed: list[TTask]
         if self.jobs == 1:
             for task in self.tasks:
                 task._run()
                 if self.progress_bar:
                     # ensure that there is a new line after each task
                     logger.info(f"Completed {task}")
-            completed = self.tasks
+            completed = list(self.tasks)
         else:
             completed = []
             with multiprocessing.Pool(processes=self.jobs) as pool:
@@ -112,7 +116,9 @@ class TaskRunner:
                     completed.append(task)
                     if self.progress_bar:
                         logger.info(f"Completed {task}")
+        self.tasks = completed
         self.collect_stats(completed)
+        return self.tasks
 
     def collect_stats(self, tasks: Sequence[Task]) -> None:
         """Collect stats from all tasks."""

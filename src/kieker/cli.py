@@ -238,8 +238,8 @@ def create_plan(
 
     exclude_paths = [Path(x).resolve() for x in (exclude or [])]
     read_tasks = list(gather_read_file_tasks(paths, exclude=exclude_paths))
-    runner = TaskRunner(tasks=read_tasks, jobs=jobs)
-    runner.run()
+    read_runner = TaskRunner[ReadFileTask](tasks=read_tasks, jobs=jobs)
+    read_tasks = read_runner.run()
 
     current: dict[str, ReadFileTask] = {}
     for t in read_tasks:
@@ -296,7 +296,7 @@ def create(
     jobs: int = 1,
     force: bool = False,
     plan: PlanResult | None = None,
-) -> TaskRunner:
+) -> TaskRunner[ParseModuleTask]:
     schema = schema or Path(__file__).with_name("schema.sql")
     if plan is None:
         plan = create_plan(
@@ -308,8 +308,8 @@ def create(
             jobs=jobs,
             force=force,
         )
-    parse_runner = TaskRunner(tasks=plan.tasks, jobs=jobs)
-    parse_runner.run()
+    parse_runner = TaskRunner[ParseModuleTask](tasks=plan.tasks, jobs=jobs)
+    parse_tasks = parse_runner.run()
 
     conn = sqlite3.connect(output)
     try:
@@ -317,7 +317,7 @@ def create(
         ensure_schema(conn, schema)
         conn.execute("BEGIN")
         delete_modules(conn, plan.delete_ids)
-        for t in plan.tasks:
+        for t in parse_tasks:
             WriteToDbTask(t, conn, kieker.__version__).run()
         conn.commit()
     finally:
