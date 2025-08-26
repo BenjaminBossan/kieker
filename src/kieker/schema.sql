@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS modules (
   module           TEXT NOT NULL,
   file             TEXT NOT NULL,
   file_hash        TEXT NOT NULL,
+  size_bytes       INTEGER NOT NULL,
+  mtime_ns         INTEGER NOT NULL,
+  kieker_version   TEXT NOT NULL,
   is_external      INTEGER NOT NULL DEFAULT 0
 );
 

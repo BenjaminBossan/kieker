@@ -129,6 +129,21 @@ def infer_module_name(file: Path, roots: Sequence[Path]) -> str:
     return module_name
 
 
+def root_relative_path(file: Path, roots: Sequence[Path]) -> str:
+    f = file.resolve()
+    candidates: list[tuple[Path, Path]] = []
+    for r in (Path(r).resolve() for r in roots):
+        try:
+            rel = f.relative_to(r)
+            candidates.append((r, rel))
+        except ValueError:
+            continue
+    if not candidates:
+        return f.as_posix()
+    _, rel = max(candidates, key=lambda p: len(p[0].parts))
+    return rel.as_posix()
+
+
 def _to_location(filename: str, span: cst.metadata.CodeRange) -> Location:
     return Location(
         file=filename,
@@ -568,13 +583,14 @@ class ParseModuleTask(Task):
 
     def parse(self) -> None:
         assert self.raw_content is not None
-        filename = str(self.read_file_task.filename)
+        filename = Path(self.read_file_task.filename)
         module_tree = cst.parse_module(self.raw_content)
         wrapper = MetadataWrapper(module_tree)
 
-        mod_name = infer_module_name(Path(filename), self.roots)
+        mod_name = infer_module_name(filename, self.roots)
+        file_abs = filename.as_posix()
         collector = _ModuleCollector(
-            module_name=mod_name, filename=filename, module=module_tree
+            module_name=mod_name, filename=file_abs, module=module_tree
         )
         wrapper.visit(collector)
 

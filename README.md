@@ -47,7 +47,7 @@ More examples [here](https://github.com/BenjaminBossan/kieker/blob/main/examples
 
 - Parse Python code into a normalized SQLite schema.
 - Store detailed information about:
-  - Modules (with file paths + file hash for change detection)
+  - Modules (with file path, size, mtime, hash and parser version for change detection)
   - Classes (name, qualified name, location, body, docstring)
   - Functions (decorators, parameters, metrics, body text, docstring)
   - Imports, inheritance edges, calls
@@ -85,7 +85,9 @@ This will:
 - Parse them with [LibCST](https://github.com/Instagram/LibCST)
 - Write all data into code.sqlite
 
-Use `--dry-run` to see which files would be analyzed without writing anything.
+Subsequent runs update only files whose contents changed. Use `--force` to
+re-parse everything from scratch. Use `--dry-run` to see which files would be
+analyzed without writing anything.
 
 ### Explore example queries
 

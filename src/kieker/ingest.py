@@ -13,12 +13,17 @@ class ReadFileTask(Task):
         self.filename = Path(filename).resolve()
         self.content: str | None = None
         self.hash: str | None = None
+        self.size_bytes: int | None = None
+        self.mtime_ns: int | None = None
 
     def run(self) -> None:
         with open(self.filename) as f:
             content = f.read()
+        stat = self.filename.stat()
         self.content = content
         self.hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        self.size_bytes = stat.st_size
+        self.mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1e9))
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(filename={str(self.filename)})"

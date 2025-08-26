@@ -3,13 +3,15 @@ import logging
 import sqlite3
 import sys
 import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from .ingest import gather_read_file_tasks
+import kieker
+from .ingest import ReadFileTask, gather_read_file_tasks
 from .parse import ParseModuleTask
 from .task import TaskRunner
-from .write import WriteToDbTask
+from .write import WriteToDbTask, delete_modules, ensure_schema
 from .project_map import create_project_map
 
 
@@ -170,6 +172,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Show files that would be analyzed and exit.",
     )
     p_create.add_argument(
+        "--force",
+        action="store_true",
+        help="Reparse all files regardless of modifications.",
+    )
+    p_create.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase logging verbosity."
     )
     p_create.add_argument(
@@ -205,6 +212,81 @@ def _validate_roots(root_strs: list[str]) -> list[Path]:
     return roots
 
 
+@dataclass
+class PlanResult:
+    tasks: list[ParseModuleTask]
+    delete_ids: list[int]
+    added: list[str]
+    modified: list[str]
+    deleted: list[str]
+
+
+def create_plan(
+    paths: list[Path],
+    output: Path,
+    roots_str: list[str] | None = None,
+    schema: Path | None = None,
+    exclude: list[str] | None = None,
+    jobs: int = 1,
+    force: bool = False,
+) -> PlanResult:
+    schema = schema or Path(__file__).with_name("schema.sql")
+    if roots_str:
+        roots = _validate_roots(roots_str)
+    else:
+        roots = [Path(p).resolve() for p in paths]
+
+    exclude_paths = [Path(x).resolve() for x in (exclude or [])]
+    read_tasks = list(gather_read_file_tasks(paths, exclude=exclude_paths))
+    runner = TaskRunner(tasks=read_tasks, jobs=jobs)
+    runner.run()
+
+    current: dict[str, ReadFileTask] = {}
+    for t in read_tasks:
+        path = t.filename.as_posix()
+        current[path] = t
+
+    existing: dict[str, tuple[int, str, str]] = {}
+    if output.exists():
+        conn = sqlite3.connect(output)
+        try:
+            for row in conn.execute(
+                "SELECT id, file, file_hash, kieker_version FROM modules"
+            ):
+                existing[row[1]] = (int(row[0]), row[2], row[3])
+        finally:
+            conn.close()
+
+    delete_ids: list[int] = []
+    added: list[str] = []
+    modified: list[str] = []
+    deleted: list[str] = []
+
+    for path, task in current.items():
+        row = existing.get(path)
+        if row is None:
+            added.append(path)
+        else:
+            mod_id, file_hash, ver = row
+            if force or task.hash != file_hash or ver != kieker.__version__:
+                modified.append(path)
+                delete_ids.append(mod_id)
+
+    for path, (mid, _, _) in existing.items():
+        if path not in current:
+            deleted.append(path)
+            delete_ids.append(mid)
+
+    parse_tasks = [ParseModuleTask(current[p], roots) for p in added + modified]
+    return PlanResult(
+        tasks=parse_tasks,
+        delete_ids=delete_ids,
+        added=added,
+        modified=modified,
+        deleted=deleted,
+    )
+
+
 def create(
     paths: list[Path],
     output: Path,
@@ -212,63 +294,91 @@ def create(
     schema: Path | None = None,
     exclude: list[str] | None = None,
     jobs: int = 1,
+    force: bool = False,
+    plan: PlanResult | None = None,
 ) -> TaskRunner:
     schema = schema or Path(__file__).with_name("schema.sql")
-    if roots_str:
-        roots = _validate_roots(roots_str)
-    else:
-        roots = [Path(p).resolve() for p in paths]
-    exclude_paths = [Path(x).resolve() for x in (exclude or [])]
-    ingest_tasks = gather_read_file_tasks(
-        [Path(p) for p in paths], exclude=exclude_paths
-    )
-    parse_tasks = (ParseModuleTask(task, roots) for task in ingest_tasks)
-    write_tasks = (
-        WriteToDbTask(task, output, schema_path=schema, override=True)
-        for task in parse_tasks
-    )
-    task_runner = TaskRunner(tasks=list(write_tasks), jobs=jobs)
-    task_runner.run()
-    return task_runner
+    if plan is None:
+        plan = create_plan(
+            paths=paths,
+            output=output,
+            roots_str=roots_str,
+            schema=schema,
+            exclude=exclude,
+            jobs=jobs,
+            force=force,
+        )
+    parse_runner = TaskRunner(tasks=plan.tasks, jobs=jobs)
+    parse_runner.run()
+
+    conn = sqlite3.connect(output)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON;")
+        ensure_schema(conn, schema)
+        conn.execute("BEGIN")
+        delete_modules(conn, plan.delete_ids)
+        for t in plan.tasks:
+            WriteToDbTask(t, conn, kieker.__version__).run()
+        conn.commit()
+    finally:
+        conn.close()
+    return parse_runner
 
 
 def cmd_create(args: argparse.Namespace) -> None:
     if args.verbose >= 1:
         logger.setLevel(logging.DEBUG)
 
+    plan = create_plan(
+        paths=[Path(p) for p in args.paths],
+        output=args.output,
+        roots_str=args.root,
+        schema=args.schema,
+        exclude=args.exclude,
+        jobs=args.jobs,
+        force=args.force,
+    )
+
     if args.dry_run:
-        ingest_tasks = gather_read_file_tasks(
-            [Path(p) for p in args.paths], exclude=[Path(x) for x in args.exclude]
+        logger.debug(
+            "Plan: %d added, %d modified, %d deleted",
+            len(plan.added),
+            len(plan.modified),
+            len(plan.deleted),
         )
-        tasks = list(ingest_tasks)
-        logger.debug("Planned analysis (%d file(s)):", len(tasks))
-        for task in tasks:
-            logger.debug("  %s", task)
-    else:
-        task_runner = create(
-            paths=args.paths,
-            output=args.output,
-            roots_str=args.root,
-            schema=args.schema,
-            exclude=args.exclude,
-            jobs=args.jobs,
+        for p in plan.added:
+            logger.debug("  add %s", p)
+        for p in plan.modified:
+            logger.debug("  mod %s", p)
+        for p in plan.deleted:
+            logger.debug("  del %s", p)
+        return
+
+    task_runner = create(
+        paths=[Path(p) for p in args.paths],
+        output=args.output,
+        roots_str=args.root,
+        schema=args.schema,
+        exclude=args.exclude,
+        jobs=args.jobs,
+        force=args.force,
+        plan=plan,
+    )
+    logger.info("Wrote database to %s", args.output)
+    for key, summary in task_runner.summary.items():
+        logger.debug(
+            (
+                "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
+                "seconds, wall time %.2f seconds"
+            ),
+            key,
+            summary.count,
+            summary.success,
+            summary.failed,
+            summary.canceled,
+            summary.user_time,
+            summary.wall_time,
         )
-        logger.info("Wrote database to %s", args.output)
-        # log summary statistics
-        for key, summary in task_runner.summary.items():
-            logger.debug(
-                (
-                    "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
-                    "seconds, wall time %.2f seconds"
-                ),
-                key,
-                summary.count,
-                summary.success,
-                summary.failed,
-                summary.canceled,
-                summary.user_time,
-                summary.wall_time,
-            )
 
 
 def cmd_examples(args: argparse.Namespace) -> None:
