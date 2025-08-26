@@ -1,15 +1,14 @@
 import argparse
 import logging
+import os
 import sqlite3
 import sys
 import textwrap
 from pathlib import Path
 from typing import Sequence
 
-from .ingest import gather_read_file_tasks
-from .parse import ParseModuleTask
-from .task import TaskRunner
-from .write import WriteToDbTask
+from .incremental import plan_changes, scan_paths, Plan
+from .write import apply_plan
 from .project_map import create_project_map
 
 
@@ -170,6 +169,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Show files that would be analyzed and exit.",
     )
     p_create.add_argument(
+        "--force",
+        action="store_true",
+        help="Force complete re-parse of all files.",
+    )
+    p_create.add_argument(
         "-v", "--verbose", action="count", default=0, help="Increase logging verbosity."
     )
     p_create.add_argument(
@@ -205,6 +209,33 @@ def _validate_roots(root_strs: list[str]) -> list[Path]:
     return roots
 
 
+def plan(
+    paths: list[Path],
+    output: Path,
+    roots_str: list[str] | None = None,
+    exclude: list[str] | None = None,
+    force: bool = False,
+) -> tuple[Plan, list[Path], Path]:
+    """Calculate an incremental ingestion plan for the given paths."""
+    if roots_str:
+        roots = _validate_roots(roots_str)
+    else:
+        roots = [Path(p).resolve() for p in paths]
+    root = Path(os.path.commonpath([str(Path(p).resolve()) for p in paths]))
+    exclude_paths = [Path(x).resolve() for x in (exclude or [])]
+    files = scan_paths([Path(p) for p in paths], exclude=exclude_paths, root=root)
+    conn = None
+    if output.exists() and not force:
+        conn = sqlite3.connect(output)
+        conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        plan = plan_changes(conn, files, force=force or not output.exists())
+    finally:
+        if conn is not None:
+            conn.close()
+    return plan, roots, root
+
+
 def create(
     paths: list[Path],
     output: Path,
@@ -212,24 +243,28 @@ def create(
     schema: Path | None = None,
     exclude: list[str] | None = None,
     jobs: int = 1,
-) -> TaskRunner:
+    force: bool = False,
+) -> Plan:
+    """Ingest the given paths into the database, applying incremental updates."""
     schema = schema or Path(__file__).with_name("schema.sql")
-    if roots_str:
-        roots = _validate_roots(roots_str)
-    else:
-        roots = [Path(p).resolve() for p in paths]
-    exclude_paths = [Path(x).resolve() for x in (exclude or [])]
-    ingest_tasks = gather_read_file_tasks(
-        [Path(p) for p in paths], exclude=exclude_paths
+    plan_result, roots, root = plan(
+        paths=paths,
+        output=output,
+        roots_str=roots_str,
+        exclude=exclude,
+        force=force,
     )
-    parse_tasks = (ParseModuleTask(task, roots) for task in ingest_tasks)
-    write_tasks = (
-        WriteToDbTask(task, output, schema_path=schema, override=True)
-        for task in parse_tasks
-    )
-    task_runner = TaskRunner(tasks=list(write_tasks), jobs=jobs)
-    task_runner.run()
-    return task_runner
+    if force and output.exists():
+        output.unlink()
+    new_db = not output.exists()
+    conn = sqlite3.connect(output)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    if new_db:
+        sql = schema.read_text(encoding="utf-8")
+        conn.executescript(sql)
+    apply_plan(conn, plan_result, roots=roots, root=root)
+    conn.close()
+    return plan_result
 
 
 def cmd_create(args: argparse.Namespace) -> None:
@@ -237,38 +272,42 @@ def cmd_create(args: argparse.Namespace) -> None:
         logger.setLevel(logging.DEBUG)
 
     if args.dry_run:
-        ingest_tasks = gather_read_file_tasks(
-            [Path(p) for p in args.paths], exclude=[Path(x) for x in args.exclude]
+        plan_result, _, _ = plan(
+            paths=args.paths,
+            output=args.output,
+            roots_str=args.root,
+            exclude=args.exclude,
+            force=args.force,
         )
-        tasks = list(ingest_tasks)
-        logger.debug("Planned analysis (%d file(s)):", len(tasks))
-        for task in tasks:
-            logger.debug("  %s", task)
+        logger.debug(
+            "Plan: %d added, %d modified, %d deleted",
+            len(plan_result.added),
+            len(plan_result.modified),
+            len(plan_result.deleted),
+        )
+        for fi in plan_result.added:
+            logger.debug("add %s", fi.path)
+        for fi in plan_result.modified:
+            logger.debug("mod %s", fi.path)
+        for path in plan_result.deleted:
+            logger.debug("del %s", path)
     else:
-        task_runner = create(
+        plan_result = create(
             paths=args.paths,
             output=args.output,
             roots_str=args.root,
             schema=args.schema,
             exclude=args.exclude,
             jobs=args.jobs,
+            force=args.force,
         )
         logger.info("Wrote database to %s", args.output)
-        # log summary statistics
-        for key, summary in task_runner.summary.items():
-            logger.debug(
-                (
-                    "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
-                    "seconds, wall time %.2f seconds"
-                ),
-                key,
-                summary.count,
-                summary.success,
-                summary.failed,
-                summary.canceled,
-                summary.user_time,
-                summary.wall_time,
-            )
+        logger.debug(
+            "Plan executed: %d added, %d modified, %d deleted",
+            len(plan_result.added),
+            len(plan_result.modified),
+            len(plan_result.deleted),
+        )
 
 
 def cmd_examples(args: argparse.Namespace) -> None:

@@ -85,7 +85,10 @@ This will:
 - Parse them with [LibCST](https://github.com/Instagram/LibCST)
 - Write all data into code.sqlite
 
-Use `--dry-run` to see which files would be analyzed without writing anything.
+Repeated runs of `create` are incremental: only changed Python files are
+re-parsed and database rows updated. Use `--dry-run` to see the planned
+operations without touching the database. Pass `--force` to rebuild everything
+from scratch.
 
 ### Explore example queries
 

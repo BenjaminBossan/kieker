@@ -1,13 +1,248 @@
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
-from .task import Task
+from .incremental import FileInfo, Plan
+from . import incremental
+from .ingest import ReadFileTask
 from .parse import ParseModuleTask
+from .task import Task
 
 
 logger = logging.getLogger()
+
+
+def insert_module_data(
+    conn: sqlite3.Connection, task: ParseModuleTask, info: FileInfo
+) -> None:
+    """Insert parsed module data and its children into the database."""
+    mi = task.module_info
+    assert mi is not None
+    file_hash = info.sha256
+    conn.execute(
+        """
+        INSERT INTO modules
+        (module, file, file_hash, mtime_ns, size_bytes, parser_version, schema_version, is_external)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        """,
+        (
+            mi.module,
+            info.path,
+            file_hash,
+            info.mtime_ns,
+            info.size_bytes,
+            incremental.CURRENT_PARSER_VERSION,
+            incremental.CURRENT_SCHEMA_VERSION,
+        ),
+    )
+    module_id = conn.execute(
+        "SELECT id FROM modules WHERE file = ?", (info.path,)
+    ).fetchone()[0]
+
+    class_id_by_qname: dict[str, int] = {}
+    for c in task.classes:
+        cur = conn.execute(
+            """
+            INSERT INTO classes
+            (module_id, name, qualified_name, file, start_line, start_col, end_line, end_col, def_text, body_text, docstring)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                module_id,
+                c.name,
+                c.qualified_name,
+                info.path,
+                c.location.start_line,
+                c.location.start_col,
+                c.location.end_line,
+                c.location.end_col,
+                c.def_text,
+                c.body_text,
+                c.docstring,
+            ),
+        )
+        class_id_by_qname[c.qualified_name] = int(cur.lastrowid)
+
+    func_id_by_qname: dict[str, int] = {}
+    for f in task.functions:
+        class_id = None
+        if f.is_method:
+            class_qname = f.qualified_name.rsplit(".", 1)[0]
+            class_id = class_id_by_qname.get(class_qname)
+        cur = conn.execute(
+            """
+            INSERT INTO functions
+            (module_id, class_id, name, qualified_name, is_method, is_staticmethod, is_classmethod,
+             is_property, is_async, file, start_line, start_col, end_line, end_col, def_text, body_text, docstring)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                module_id,
+                class_id,
+                f.name,
+                f.qualified_name,
+                int(f.is_method),
+                int(f.is_staticmethod),
+                int(f.is_classmethod),
+                int(f.is_property),
+                int(f.is_async),
+                info.path,
+                f.location.start_line,
+                f.location.start_col,
+                f.location.end_line,
+                f.location.end_col,
+                f.def_text,
+                f.body_text,
+                f.docstring,
+            ),
+        )
+        func_id_by_qname[f.qualified_name] = int(cur.lastrowid)
+
+    for p in task.parameters:
+        fid = func_id_by_qname.get(p.function_qname)
+        if fid is None:
+            continue
+        name_str = (
+            p.name if isinstance(p.name, str) else getattr(p.name, "value", str(p.name))
+        )
+        conn.execute(
+            """
+            INSERT INTO parameters (function_id, name, pos_kind, default_kind, default_repr, annotation_repr)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fid,
+                name_str,
+                p.pos_kind,
+                p.default_kind,
+                p.default_repr,
+                p.annotation_repr,
+            ),
+        )
+
+    for d in task.decorators:
+        target_id = func_id_by_qname.get(d.target_qname)
+        target_kind = "function"
+        if target_id is None:
+            target_id = class_id_by_qname.get(d.target_qname)
+            target_kind = "class"
+        if target_id is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO decorators
+            (target_kind, target_id, name_repr, file, start_line, start_col, end_line, end_col)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                target_kind,
+                target_id,
+                d.name_repr,
+                info.path,
+                d.location.start_line,
+                d.location.start_col,
+                d.location.end_line,
+                d.location.end_col,
+            ),
+        )
+
+    for im in task.imports:
+        conn.execute(
+            """
+            INSERT INTO imports
+            (module_id, imported, alias, is_from_import, file, start_line, start_col, end_line, end_col)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                module_id,
+                im.imported,
+                im.alias,
+                1 if im.is_from_import else 0,
+                info.path,
+                im.location.start_line,
+                im.location.start_col,
+                im.location.end_line,
+                im.location.end_col,
+            ),
+        )
+
+    for inh in task.inheritance:
+        subclass_id = class_id_by_qname.get(inh.subclass_qname)
+        if subclass_id is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO inheritance
+            (subclass_id, superclass_name, file, start_line, start_col, end_line, end_col)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                subclass_id,
+                inh.superclass_name,
+                info.path,
+                inh.location.start_line,
+                inh.location.start_col,
+                inh.location.end_line,
+                inh.location.end_col,
+            ),
+        )
+
+    for call in task.calls:
+        caller_id = func_id_by_qname.get(call.caller_qname)
+        if caller_id is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO calls
+            (caller_id, callee_repr, file, start_line, start_col, end_line, end_col)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                caller_id,
+                call.callee_repr,
+                info.path,
+                call.location.start_line,
+                call.location.start_col,
+                call.location.end_line,
+                call.location.end_col,
+            ),
+        )
+
+    for m in task.function_metrics:
+        fid = func_id_by_qname.get(m.function_qname)
+        if fid is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO function_metrics (function_id, lines_of_code, cyclomatic)
+            VALUES (?, ?, ?)
+            """,
+            (
+                fid,
+                m.lines_of_code,
+                m.cyclomatic,
+            ),
+        )
+
+
+def apply_plan(
+    conn: sqlite3.Connection,
+    plan: Plan,
+    *,
+    roots: Sequence[Path],
+    root: Path,
+) -> None:
+    """Execute an incremental plan by updating the database."""
+    with conn:
+        for file in plan.deleted:
+            conn.execute("DELETE FROM modules WHERE file = ?", (file,))
+        for info in plan.added + plan.modified:
+            conn.execute("DELETE FROM modules WHERE file = ?", (info.path,))
+            read_task = ReadFileTask(root / info.path)
+            parse_task = ParseModuleTask(read_task, roots)
+            parse_task.run()
+            insert_module_data(conn, parse_task, info)
 
 
 class WriteToDbTask(Task):
