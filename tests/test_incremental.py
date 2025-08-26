@@ -15,10 +15,10 @@ def test_incremental_flow(tmp_path: Path) -> None:
     db = tmp_path / "out.sqlite"
 
     # Cold start
-    plan = create_plan(paths=[repo], output=db)
+    plan = create_plan(paths=[repo], output=db, jobs=2)
     assert sorted(plan.added) == [str(f1), str(f2)]
     assert not plan.modified and not plan.deleted
-    create(paths=[repo], output=db, plan=plan)
+    create(paths=[repo], output=db, plan=plan, jobs=2)
     con = sqlite3.connect(db)
     try:
         (count,) = con.execute("SELECT COUNT(*) FROM modules").fetchone()
@@ -27,14 +27,14 @@ def test_incremental_flow(tmp_path: Path) -> None:
         con.close()
 
     # No-op
-    plan = create_plan(paths=[repo], output=db)
+    plan = create_plan(paths=[repo], output=db, jobs=2)
     assert plan.added == [] and plan.modified == [] and plan.deleted == []
 
     # Single edit
     f1.write_text("def a():\n    return 42\n")
-    plan = create_plan(paths=[repo], output=db)
+    plan = create_plan(paths=[repo], output=db, jobs=2)
     assert plan.modified == [str(f1)]
-    create(paths=[repo], output=db, plan=plan)
+    create(paths=[repo], output=db, plan=plan, jobs=2)
     con = sqlite3.connect(db)
     try:
         (count,) = con.execute("SELECT COUNT(*) FROM modules").fetchone()
@@ -44,9 +44,9 @@ def test_incremental_flow(tmp_path: Path) -> None:
 
     # Delete
     f1.unlink()
-    plan = create_plan(paths=[repo], output=db)
+    plan = create_plan(paths=[repo], output=db, jobs=2)
     assert plan.deleted == [str(f1)]
-    create(paths=[repo], output=db, plan=plan)
+    create(paths=[repo], output=db, plan=plan, jobs=2)
     con = sqlite3.connect(db)
     try:
         (count,) = con.execute("SELECT COUNT(*) FROM modules").fetchone()
@@ -58,7 +58,7 @@ def test_incremental_flow(tmp_path: Path) -> None:
     old = kieker.__version__
     kieker.__version__ = "9.9.9"
     try:
-        plan = create_plan(paths=[repo], output=db)
+        plan = create_plan(paths=[repo], output=db, jobs=2)
         assert plan.modified == [str(f2)]
     finally:
         kieker.__version__ = old
