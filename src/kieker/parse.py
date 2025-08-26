@@ -125,11 +125,8 @@ def infer_module_name(file: Path, roots: Sequence[Path]) -> str:
     root = max(candidates, key=lambda p: len(p.parts))
     rel = f.relative_to(root)
     parts = list(rel.parts)
-    if parts and parts[-1] == "__init__.py":
-        parts = parts[:-1]
-    elif parts:
-        parts[-1] = parts[-1].rsplit(".", 1)[0]  # drop .py
-    return ".".join(parts)
+    module_name = ".".join(parts).removesuffix(".py")
+    return module_name
 
 
 def _to_location(filename: str, span: cst.metadata.CodeRange) -> Location:

@@ -1,5 +1,6 @@
 import argparse
 import logging
+import sqlite3
 import sys
 import textwrap
 from pathlib import Path
@@ -9,6 +10,7 @@ from .ingest import gather_read_file_tasks
 from .parse import ParseModuleTask
 from .task import TaskRunner
 from .write import WriteToDbTask
+from .project_map import create_project_map
 
 
 logger = logging.getLogger("sql-over-code")
@@ -132,7 +134,7 @@ for idx, row in enumerate(EXAMPLES):
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="soc", description="SQL-over-Code CLI")
+    parser = argparse.ArgumentParser(prog="kieker", description="SQL-over-Code CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # create
@@ -186,6 +188,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p_examples.add_argument(
         "-l", "--list", action="store_true", help="List available examples."
     )
+
+    # map
+    p_map = sub.add_parser("map", help="Print a map of modules, classes and functions.")
+    p_map.add_argument("db", type=Path, help="Path to SQLite database file.")
     return parser.parse_args(argv)
 
 
@@ -283,12 +289,35 @@ def cmd_examples(args: argparse.Namespace) -> None:
     print(ex["sql"])
 
 
+def cmd_map(args: argparse.Namespace) -> None:
+    conn = sqlite3.connect(args.db)
+    try:
+        modules = create_project_map(conn)
+    finally:
+        conn.close()
+
+    for module in modules:
+        print(f"{module.name}  {module.file}")
+        for cls in module.classes:
+            indent = "    " + cls.col * " "
+            print(f"{indent}class {cls.name}  {cls.file}:{cls.line}")
+            for func in cls.methods:
+                indent = "    " + func.col * " "
+                loc = f"{func.file}:{func.line}"
+                print(f"{indent}def {func.name} {loc}")
+        for func in module.functions:
+            indent = "    " + func.col * " "
+            print(f"{indent}def {func.name}  {func.file}:{func.line}")
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
     if args.cmd == "create":
         cmd_create(args)
     elif args.cmd == "examples":
         cmd_examples(args)
+    elif args.cmd == "map":
+        cmd_map(args)
     else:
         raise AssertionError("unreachable")
 

@@ -59,6 +59,14 @@ Show example 1:
 python cli.py examples 1
 ```
 
+### Show a project map
+
+Generate a tree of modules, classes, and functions:
+
+```sh
+python cli.py map code.sqlite
+```
+
 ### Run queries yourself
 
 Open the database with the `sqlite3` command line tool or any other tool of your liking and run the quries you're interested in.
