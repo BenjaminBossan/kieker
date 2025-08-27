@@ -1,5 +1,4 @@
 import argparse
-import logging
 import sqlite3
 import sys
 import textwrap
@@ -13,13 +12,7 @@ from .parse import ParseModuleTask
 from .task import TaskRunner
 from .write import WriteToDbTask, delete_modules, ensure_schema
 from .project_map import create_project_map
-
-
-logger = logging.getLogger("sql-over-code")
-handler = logging.StreamHandler(sys.stderr)
-handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+from .log import configure_logger, logger
 
 EXAMPLES: list[dict[str, str]] = [
     {
@@ -137,6 +130,7 @@ for idx, row in enumerate(EXAMPLES):
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="kieker", description="SQL-over-Code CLI")
+    parser.set_defaults(verbose=0, dry_run=False)
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     # create
@@ -327,9 +321,6 @@ def create(
 
 
 def cmd_create(args: argparse.Namespace) -> None:
-    if args.verbose >= 1:
-        logger.setLevel(logging.DEBUG)
-
     plan = create_plan(
         paths=[Path(p) for p in args.paths],
         output=args.output,
@@ -341,18 +332,18 @@ def cmd_create(args: argparse.Namespace) -> None:
     )
 
     if args.dry_run:
-        logger.debug(
+        logger.info(
             "Plan: %d added, %d modified, %d deleted",
             len(plan.added),
             len(plan.modified),
             len(plan.deleted),
         )
         for p in plan.added:
-            logger.debug("  add %s", p)
+            logger.info("  add %s", p)
         for p in plan.modified:
-            logger.debug("  mod %s", p)
+            logger.info("  mod %s", p)
         for p in plan.deleted:
-            logger.debug("  del %s", p)
+            logger.info("  del %s", p)
         return
 
     task_runner = create(
@@ -366,19 +357,34 @@ def cmd_create(args: argparse.Namespace) -> None:
         plan=plan,
     )
     logger.info("Wrote database to %s", args.output)
-    for key, summary in task_runner.summary.items():
-        logger.debug(
+    if task_runner.summary:
+        for key, summary in task_runner.summary.items():
+            logger.info(
+                (
+                    "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
+                    "seconds, wall time %.2f seconds"
+                ),
+                key,
+                summary.count,
+                summary.success,
+                summary.failed,
+                summary.canceled,
+                summary.user_time,
+                summary.wall_time,
+            )
+    else:
+        logger.info(
             (
                 "%s: %d tasks, %d success, %d failed, %d canceled, user time %.2f "
                 "seconds, wall time %.2f seconds"
             ),
-            key,
-            summary.count,
-            summary.success,
-            summary.failed,
-            summary.canceled,
-            summary.user_time,
-            summary.wall_time,
+            ParseModuleTask.__name__,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            0.0,
         )
 
 
@@ -423,6 +429,10 @@ def cmd_map(args: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
+    verbosity = args.verbose
+    if args.dry_run and verbosity == 0:
+        verbosity = 1
+    configure_logger(verbosity)
     if args.cmd == "create":
         cmd_create(args)
     elif args.cmd == "examples":

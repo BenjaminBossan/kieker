@@ -1,13 +1,10 @@
-import logging
 import sqlite3
 from pathlib import Path
 from typing import Sequence
 
 from .parse import ParseModuleTask, ParseResult
 from .task import ResultTask
-
-
-logger = logging.getLogger()
+from .log import logger
 
 
 def ensure_schema(conn: sqlite3.Connection, schema_path: Path) -> None:
