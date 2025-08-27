@@ -44,10 +44,10 @@ def gather_read_file_tasks(
     paths: Sequence[Path], exclude: Sequence[Path]
 ) -> Iterator[ReadFileTask]:
     """Expand the given paths into a list of `ReadFileTask`s (recursively)."""
-    exclude = list(exclude)
-    for path in paths:
+    exclude_paths = {Path(ex).resolve() for ex in exclude}
+    for path in map(Path, paths):
         path = path.resolve()
-        if any(str(path).startswith(str(ex)) for ex in exclude):
+        if any(path.is_relative_to(ex) for ex in exclude_paths):
             continue
 
         # file
@@ -59,5 +59,11 @@ def gather_read_file_tasks(
 
         # directory
         if path.is_dir():
-            for child in path.iterdir():
-                yield from gather_read_file_tasks([child], exclude=exclude)
+            for file in path.rglob("*.py"):
+                file = file.resolve()
+                if any(file.is_relative_to(ex) for ex in exclude_paths):
+                    continue
+                if file.is_symlink():
+                    continue
+                if _is_valid_file(file):
+                    yield ReadFileTask(file)
