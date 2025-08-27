@@ -1,17 +1,13 @@
 import datetime as dt
 import enum
-import logging
 import multiprocessing
-import sys
 import time
 from dataclasses import dataclass, field
 from multiprocessing import cpu_count
 from typing import Any, Generic, Sequence, TypeVar, cast
 
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-logger.addHandler(logging.StreamHandler(sys.stderr))
+from .log import logger
 
 
 class TaskStatus(enum.Enum):
