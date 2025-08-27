@@ -14,7 +14,6 @@ HERE = Path(__file__).parent
 DBPATH = HERE / DBNAME
 REPO_URL = "https://github.com/skorch-dev/skorch.git"
 REPO_TAG = "v1.2.0"
-JOBS = 4
 
 
 def _create_db(path: Path) -> Path:
@@ -22,11 +21,11 @@ def _create_db(path: Path) -> Path:
     subprocess.check_call(
         ["git", "clone", "--depth", "1", "--branch", REPO_TAG, REPO_URL, str(path)]
     )
+    # don't run with jobs>1, as parallelism will mess with code coverage report
     create(
         paths=[path / "skorch"],
         output=DBPATH,
         exclude=[str(path / "skorch" / "tests")],
-        jobs=JOBS,
     )
     return DBPATH
 
