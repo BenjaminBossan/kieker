@@ -142,21 +142,6 @@ def infer_module_name(file: Path, roots: Sequence[Path]) -> str:
     return module_name
 
 
-def root_relative_path(file: Path, roots: Sequence[Path]) -> str:
-    f = file.resolve()
-    candidates: list[tuple[Path, Path]] = []
-    for r in (Path(r).resolve() for r in roots):
-        try:
-            rel = f.relative_to(r)
-            candidates.append((r, rel))
-        except ValueError:
-            continue
-    if not candidates:
-        return f.as_posix()
-    _, rel = max(candidates, key=lambda p: len(p[0].parts))
-    return rel.as_posix()
-
-
 def _to_location(filename: str, span: cst.metadata.CodeRange) -> Location:
     return Location(
         file=filename,
@@ -229,9 +214,6 @@ class _ModuleCollector(cst.CSTVisitor):
         # classes in order of nesting
         parts.extend(cls.name for cls in self._class_stack)
         return ".".join(parts)
-
-    def _current_class_qname(self) -> Optional[str]:
-        return self._class_stack[-1].qualified_name if self._class_stack else None
 
     def _current_func_qname(self) -> Optional[str]:
         return self._func_stack[-1].qualified_name if self._func_stack else None
