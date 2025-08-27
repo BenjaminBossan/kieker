@@ -6,7 +6,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from multiprocessing import cpu_count
-from typing import Generic, Sequence, TypeVar
+from typing import Any, Generic, Sequence, TypeVar, cast
 
 
 logger = logging.getLogger()
@@ -46,42 +46,52 @@ class SummaryStat:
         return self._end - self._start
 
 
-class Task:
-    """TODO"""
+TResult = TypeVar("TResult")
+
+class ResultTask(Generic[TResult]):
+    """Idempotent task that returns a result on demand."""
 
     def __init__(self) -> None:
         self.has_run = False
+        self._result: TResult | Exception | None = None
         self.stats: list[TaskStat] = []
 
-    def _run(self) -> None:
-        error: Exception | None = None
+    def run(self) -> TResult:
+        raise NotImplementedError
+
+    def get_result(self) -> TResult:
+        if self.has_run:
+            if isinstance(self._result, Exception):
+                raise self._result
+            return cast(TResult, self._result)
+
         date = dt.datetime.now(tz=dt.timezone.utc)
         start = time.perf_counter()
-
+        error: Exception | None = None
         try:
-            self.run()
+            result = self.run()
             status = TaskStatus.SUCCESS
+            self._result = result
         except Exception as exc:
-            status = TaskStatus.FAILED
             error = exc
-        finally:
-            self.has_run = True
-            end = time.perf_counter()
-            self.stats.append(
-                TaskStat(date=date, start=start, end=end, status=status, error=error)
-            )
+            status = TaskStatus.FAILED
+            self._result = exc
+        end = time.perf_counter()
+        self.has_run = True
+        self.stats.append(
+            TaskStat(date=date, start=start, end=end, status=status, error=error)
+        )
+        if error is not None:
+            raise error
+        return cast(TResult, self._result)
 
-    def run(self) -> None:
-        """TODO"""
-        raise NotImplementedError("TODO")
 
-
-TTask = TypeVar("TTask", bound="Task")
+TTask = TypeVar("TTask", bound="ResultTask[Any]")
 
 
 def _run_task(task: TTask) -> TTask:
     """Helper to run a task in a separate process."""
-    task._run()
+    task.get_result()
     return task
 
 
@@ -104,7 +114,7 @@ class TaskRunner(Generic[TTask]):
         completed: list[TTask]
         if self.jobs == 1:
             for task in self.tasks:
-                task._run()
+                task.get_result()
                 if self.progress_bar:
                     # ensure that there is a new line after each task
                     logger.info(f"Completed {task}")
@@ -120,9 +130,9 @@ class TaskRunner(Generic[TTask]):
         self.collect_stats(completed)
         return self.tasks
 
-    def collect_stats(self, tasks: Sequence[Task]) -> None:
+    def collect_stats(self, tasks: Sequence[ResultTask[Any]]) -> None:
         """Collect stats from all tasks."""
-        skipped: list[Task] = []
+        skipped: list[ResultTask[Any]] = []
         summary = self.summary
         for task in tasks:
             if not task.has_run:

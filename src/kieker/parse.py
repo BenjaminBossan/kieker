@@ -12,7 +12,7 @@ from typing import Literal, Optional, Sequence
 import libcst as cst
 from libcst.metadata import MetadataWrapper, PositionProvider, ParentNodeProvider
 
-from .task import Task
+from .task import ResultTask
 from .ingest import ReadFileTask
 
 
@@ -104,6 +104,20 @@ class FunctionMetrics:
     function_qname: str
     lines_of_code: int
     cyclomatic: int
+
+
+@dataclass
+class ParseResult:
+    raw_content: str
+    module_info: ModuleInfo
+    classes: list[ClassInfo]
+    functions: list[FunctionInfo]
+    parameters: list[ParameterInfo]
+    decorators: list[DecoratorInfo]
+    imports: list[ImportInfo]
+    inheritance: list[InheritanceEdge]
+    calls: list[CallInfo]
+    function_metrics: list[FunctionMetrics]
 
 
 def infer_module_name(file: Path, roots: Sequence[Path]) -> str:
@@ -552,39 +566,19 @@ class _ModuleCollector(cst.CSTVisitor):
         )
 
 
-class ParseModuleTask(Task):
-    """
-    Parse a single Python module with libcst and collect structured facts.
-    """
+class ParseModuleTask(ResultTask[ParseResult]):
+    """Parse a single Python module and collect structured facts."""
 
     def __init__(self, read_file_task: ReadFileTask, roots: Sequence[Path]) -> None:
         super().__init__()
         self.read_file_task = read_file_task
         self.roots = [Path(r).resolve() for r in roots]
 
-        # Results
-        self.raw_content: Optional[str] = None
-        self.module_info: Optional[ModuleInfo] = None
-        self.classes: list[ClassInfo] = []
-        self.functions: list[FunctionInfo] = []
-        self.parameters: list[ParameterInfo] = []
-        self.decorators: list[DecoratorInfo] = []
-        self.imports: list[ImportInfo] = []
-        self.inheritance: list[InheritanceEdge] = []
-        self.calls: list[CallInfo] = []
-        self.function_metrics: list[FunctionMetrics] = []
-
-    def run(self) -> None:
-        self.read_file_task.run()
-        content = self.read_file_task.content
-        assert content is not None
-        self.raw_content = content
-        self.parse()
-
-    def parse(self) -> None:
-        assert self.raw_content is not None
+    def run(self) -> ParseResult:
+        read_result = self.read_file_task.get_result()
+        content = read_result.content
         filename = Path(self.read_file_task.filename)
-        module_tree = cst.parse_module(self.raw_content)
+        module_tree = cst.parse_module(content)
         wrapper = MetadataWrapper(module_tree)
 
         mod_name = infer_module_name(filename, self.roots)
@@ -594,16 +588,18 @@ class ParseModuleTask(Task):
         )
         wrapper.visit(collector)
 
-        # Export results
-        self.module_info = collector.module
-        self.classes = collector.classes
-        self.functions = collector.functions
-        self.parameters = collector.parameters
-        self.decorators = collector.decorators
-        self.imports = collector.imports
-        self.inheritance = collector.inheritance
-        self.calls = collector.calls
-        self.function_metrics = collector.function_metrics
+        return ParseResult(
+            raw_content=content,
+            module_info=collector.module,
+            classes=collector.classes,
+            functions=collector.functions,
+            parameters=collector.parameters,
+            decorators=collector.decorators,
+            imports=collector.imports,
+            inheritance=collector.inheritance,
+            calls=collector.calls,
+            function_metrics=collector.function_metrics,
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(filename={self.read_file_task.filename})"

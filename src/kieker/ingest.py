@@ -1,29 +1,36 @@
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Sequence
 
-from .task import Task
+from .task import ResultTask
 
 
-class ReadFileTask(Task):
+@dataclass
+class ReadFileResult:
+    content: str
+    hash: str
+    size_bytes: int
+    mtime_ns: int
+
+
+class ReadFileTask(ResultTask[ReadFileResult]):
     """A task that reads a file."""
 
     def __init__(self, filename: str | Path):
         super().__init__()
         self.filename = Path(filename).resolve()
-        self.content: str | None = None
-        self.hash: str | None = None
-        self.size_bytes: int | None = None
-        self.mtime_ns: int | None = None
 
-    def run(self) -> None:
+    def run(self) -> ReadFileResult:
         with open(self.filename) as f:
             content = f.read()
         stat = self.filename.stat()
-        self.content = content
-        self.hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        self.size_bytes = stat.st_size
-        self.mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1e9))
+        return ReadFileResult(
+            content=content,
+            hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            size_bytes=stat.st_size,
+            mtime_ns=getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1e9)),
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(filename={str(self.filename)})"
