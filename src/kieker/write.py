@@ -214,11 +214,24 @@ class WriteToDbTask(ResultTask[None]):
         func_id_by_qname: dict[str, int],
         parse_result: ParseResult,
     ) -> None:
+        rows = []
         for p in parse_result.parameters:
             func_id = func_id_by_qname.get(p.function_qname)
             if func_id is None:
                 continue
-            conn.execute(
+            rows.append(
+                (
+                    func_id,
+                    p.name,
+                    p.pos_kind,
+                    p.default_kind,
+                    p.default_repr,
+                    p.annotation_repr,
+                )
+            )
+
+        if rows:
+            conn.executemany(
                 """
                 INSERT INTO parameters
                 (function_id, name, pos_kind, default_kind, default_repr, annotation_repr)
@@ -228,14 +241,7 @@ class WriteToDbTask(ResultTask[None]):
                   default_repr=excluded.default_repr,
                   annotation_repr=excluded.annotation_repr
                 """,
-                (
-                    func_id,
-                    p.name,
-                    p.pos_kind,
-                    p.default_kind,
-                    p.default_repr,
-                    p.annotation_repr,
-                ),
+                rows,
             )
 
     def _insert_decorators(
@@ -245,6 +251,7 @@ class WriteToDbTask(ResultTask[None]):
         func_id_by_qname: dict[str, int],
         parse_result: ParseResult,
     ) -> None:
+        rows = []
         for d in parse_result.decorators:
             target_id = None
             target_kind = "function"
@@ -254,12 +261,7 @@ class WriteToDbTask(ResultTask[None]):
                 target_kind = "class"
             if target_id is None:
                 continue
-            conn.execute(
-                """
-                INSERT INTO decorators
-                (target_kind, target_id, name_repr, file, start_line, start_col, end_line, end_col)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+            rows.append(
                 (
                     target_kind,
                     target_id,
@@ -269,30 +271,45 @@ class WriteToDbTask(ResultTask[None]):
                     d.location.start_col,
                     d.location.end_line,
                     d.location.end_col,
-                ),
+                )
+            )
+
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO decorators
+                (target_kind, target_id, name_repr, file, start_line, start_col, end_line, end_col)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
             )
 
     def _insert_imports(
         self, conn: sqlite3.Connection, module_id: int, parse_result: ParseResult
     ) -> None:
-        for imp in parse_result.imports:
-            conn.execute(
+        rows = [
+            (
+                module_id,
+                imp.imported,
+                imp.alias,
+                int(imp.is_from_import),
+                imp.location.file,
+                imp.location.start_line,
+                imp.location.start_col,
+                imp.location.end_line,
+                imp.location.end_col,
+            )
+            for imp in parse_result.imports
+        ]
+
+        if rows:
+            conn.executemany(
                 """
                 INSERT INTO imports
                 (module_id, imported, alias, is_from_import, file, start_line, start_col, end_line, end_col)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    module_id,
-                    imp.imported,
-                    imp.alias,
-                    int(imp.is_from_import),
-                    imp.location.file,
-                    imp.location.start_line,
-                    imp.location.start_col,
-                    imp.location.end_line,
-                    imp.location.end_col,
-                ),
+                rows,
             )
 
     def _insert_inheritance(
@@ -301,11 +318,25 @@ class WriteToDbTask(ResultTask[None]):
         class_id_by_qname: dict[str, int],
         parse_result: ParseResult,
     ) -> None:
+        rows = []
         for inh in parse_result.inheritance:
             subclass_id = class_id_by_qname.get(inh.subclass_qname)
             if subclass_id is None:
                 continue
-            conn.execute(
+            rows.append(
+                (
+                    subclass_id,
+                    inh.superclass_name,
+                    inh.location.file,
+                    inh.location.start_line,
+                    inh.location.start_col,
+                    inh.location.end_line,
+                    inh.location.end_col,
+                )
+            )
+
+        if rows:
+            conn.executemany(
                 """
                 INSERT INTO inheritance (subclass_id, superclass_name, file, start_line, start_col, end_line, end_col)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -316,15 +347,7 @@ class WriteToDbTask(ResultTask[None]):
                   end_line=excluded.end_line,
                   end_col=excluded.end_col
                 """,
-                (
-                    subclass_id,
-                    inh.superclass_name,
-                    inh.location.file,
-                    inh.location.start_line,
-                    inh.location.start_col,
-                    inh.location.end_line,
-                    inh.location.end_col,
-                ),
+                rows,
             )
 
     def _insert_calls(
@@ -333,16 +356,12 @@ class WriteToDbTask(ResultTask[None]):
         func_id_by_qname: dict[str, int],
         parse_result: ParseResult,
     ) -> None:
+        rows = []
         for call in parse_result.calls:
             caller_id = func_id_by_qname.get(call.caller_qname)
             if caller_id is None:
                 continue
-            conn.execute(
-                """
-                INSERT INTO calls
-                (caller_id, callee_repr, file, start_line, start_col, end_line, end_col)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
+            rows.append(
                 (
                     caller_id,
                     call.callee_repr,
@@ -351,7 +370,17 @@ class WriteToDbTask(ResultTask[None]):
                     call.location.start_col,
                     call.location.end_line,
                     call.location.end_col,
-                ),
+                )
+            )
+
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO calls
+                (caller_id, callee_repr, file, start_line, start_col, end_line, end_col)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
             )
 
     def _insert_function_metrics(
@@ -360,11 +389,15 @@ class WriteToDbTask(ResultTask[None]):
         func_id_by_qname: dict[str, int],
         parse_result: ParseResult,
     ) -> None:
+        rows = []
         for m in parse_result.function_metrics:
             func_id = func_id_by_qname.get(m.function_qname)
             if func_id is None:
                 continue
-            conn.execute(
+            rows.append((func_id, m.lines_of_code, m.cyclomatic))
+
+        if rows:
+            conn.executemany(
                 """
                 INSERT INTO function_metrics
                 (function_id, lines_of_code, cyclomatic)
@@ -373,5 +406,5 @@ class WriteToDbTask(ResultTask[None]):
                   lines_of_code=excluded.lines_of_code,
                   cyclomatic=excluded.cyclomatic
                 """,
-                (func_id, m.lines_of_code, m.cyclomatic),
+                rows,
             )

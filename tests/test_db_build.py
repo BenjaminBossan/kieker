@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 
 def test_schema_tables_exist(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
@@ -34,4 +36,20 @@ def test_modules_have_rows(conn: sqlite3.Connection) -> None:
 
 def test_functions_have_rows(conn: sqlite3.Connection) -> None:
     (n,) = conn.execute("SELECT COUNT(*) FROM functions").fetchone()
+    assert n >= 1
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        "parameters",
+        "decorators",
+        "imports",
+        "inheritance",
+        "calls",
+        "function_metrics",
+    ],
+)
+def test_inserted_tables_have_rows(conn: sqlite3.Connection, table: str) -> None:
+    (n,) = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
     assert n >= 1
