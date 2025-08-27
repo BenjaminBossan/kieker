@@ -268,7 +268,8 @@ def create_plan(
             added.append(path)
         else:
             mod_id, file_hash, ver = row
-            if force or task.hash != file_hash or ver != kieker.__version__:
+            rf = task.get_result()
+            if force or rf.hash != file_hash or ver != kieker.__version__:
                 modified.append(path)
                 delete_ids.append(mod_id)
 
@@ -318,7 +319,7 @@ def create(
         conn.execute("BEGIN")
         delete_modules(conn, plan.delete_ids)
         for t in parse_tasks:
-            WriteToDbTask(t, conn, kieker.__version__).run()
+            WriteToDbTask(t, conn, kieker.__version__).get_result()
         conn.commit()
     finally:
         conn.close()

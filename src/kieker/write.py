@@ -3,8 +3,8 @@ import sqlite3
 from pathlib import Path
 from typing import Sequence
 
-from .parse import ParseModuleTask
-from .task import Task
+from .parse import ParseModuleTask, ParseResult
+from .task import ResultTask
 
 
 logger = logging.getLogger()
@@ -16,11 +16,11 @@ def ensure_schema(conn: sqlite3.Connection, schema_path: Path) -> None:
 
 
 def delete_modules(conn: sqlite3.Connection, module_ids: Sequence[int]) -> None:
-    for mid in module_ids:
-        conn.execute("DELETE FROM modules WHERE id=?", (mid,))
+    for module_id in module_ids:
+        conn.execute("DELETE FROM modules WHERE id=?", (module_id,))
 
 
-class WriteToDbTask(Task):
+class WriteToDbTask(ResultTask[None]):
     """Persist the results of a ParseModuleTask into a SQLite database."""
 
     def __init__(
@@ -32,28 +32,27 @@ class WriteToDbTask(Task):
         self.version = version
 
     def run(self) -> None:
-        if self.task.module_info is None:
-            raise RuntimeError("Parse task did not produce module_info.")
+        parse_result = self.task.get_result()
         conn = self.conn
 
-        module_id = self._insert_module(conn)
-        class_id_by_qname = self._insert_classes(conn, module_id)
-        func_id_by_qname = self._insert_functions(conn, module_id, class_id_by_qname)
-        self._insert_parameters(conn, func_id_by_qname)
-        self._insert_decorators(conn, class_id_by_qname, func_id_by_qname)
-        self._insert_imports(conn, module_id)
-        self._insert_inheritance(conn, class_id_by_qname)
-        self._insert_calls(conn, func_id_by_qname)
-        self._insert_function_metrics(conn, func_id_by_qname)
+        module_id = self._insert_module(conn, parse_result)
+        class_id_by_qname = self._insert_classes(conn, module_id, parse_result)
+        func_id_by_qname = self._insert_functions(
+            conn, module_id, class_id_by_qname, parse_result
+        )
+        self._insert_parameters(conn, func_id_by_qname, parse_result)
+        self._insert_decorators(conn, class_id_by_qname, func_id_by_qname, parse_result)
+        self._insert_imports(conn, module_id, parse_result)
+        self._insert_inheritance(conn, class_id_by_qname, parse_result)
+        self._insert_calls(conn, func_id_by_qname, parse_result)
+        self._insert_function_metrics(conn, func_id_by_qname, parse_result)
 
-    def _insert_module(self, conn: sqlite3.Connection) -> int:
-        mi = self.task.module_info
-        assert mi is not None
-        rft = self.task.read_file_task
-        file_hash = rft.hash
-        assert file_hash is not None, "Module info must have a file hash"
-        size = rft.size_bytes
-        mtime = rft.mtime_ns
+    def _insert_module(self, conn: sqlite3.Connection, parse_result: ParseResult) -> int:
+        module_info = parse_result.module_info
+        read_result = self.task.read_file_task.get_result()
+        file_hash = read_result.hash
+        size = read_result.size_bytes
+        mtime = read_result.mtime_ns
         conn.execute(
             """
             INSERT INTO modules (module, file, file_hash, size_bytes, mtime_ns, kieker_version, is_external)
@@ -66,19 +65,19 @@ class WriteToDbTask(Task):
               kieker_version = excluded.kieker_version,
               is_external    = excluded.is_external
             """,
-            (mi.module, mi.file, file_hash, size, mtime, self.version, 0),
+            (module_info.module, module_info.file, file_hash, size, mtime, self.version, 0),
         )
         row = conn.execute(
-            "SELECT id FROM modules WHERE module = ?", (mi.module,)
+            "SELECT id FROM modules WHERE module = ?", (module_info.module,)
         ).fetchone()
         return int(row[0])
 
     def _insert_classes(
-        self, conn: sqlite3.Connection, module_id: int
+        self, conn: sqlite3.Connection, module_id: int, parse_result: ParseResult
     ) -> dict[str, int]:
         class_id_by_qname: dict[str, int] = {}
         rows = []
-        for c in self.task.classes:
+        for c in parse_result.classes:
             rows.append(
                 (
                     module_id,
@@ -133,10 +132,10 @@ class WriteToDbTask(Task):
                 r,
             )
 
-        for cid, qn in conn.execute(
+        for class_id, qualified_name in conn.execute(
             "SELECT id, qualified_name FROM classes WHERE module_id=?", (module_id,)
         ):
-            class_id_by_qname[qn] = int(cid)
+            class_id_by_qname[qualified_name] = int(class_id)
         return class_id_by_qname
 
     def _insert_functions(
@@ -144,9 +143,10 @@ class WriteToDbTask(Task):
         conn: sqlite3.Connection,
         module_id: int,
         class_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> dict[str, int]:
         func_id_by_qname: dict[str, int] = {}
-        for f in self.task.functions:
+        for f in parse_result.functions:
             class_id = None
             if f.is_method:
                 class_qname = f.qualified_name.rsplit(".", 1)[0]
@@ -195,16 +195,19 @@ class WriteToDbTask(Task):
                 ),
             )
 
-        for fid, qn in conn.execute(
+        for function_id, qualified_name in conn.execute(
             "SELECT id, qualified_name FROM functions WHERE module_id=?", (module_id,)
         ):
-            func_id_by_qname[qn] = int(fid)
+            func_id_by_qname[qualified_name] = int(function_id)
         return func_id_by_qname
 
     def _insert_parameters(
-        self, conn: sqlite3.Connection, func_id_by_qname: dict[str, int]
+        self,
+        conn: sqlite3.Connection,
+        func_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> None:
-        for p in self.task.parameters:
+        for p in parse_result.parameters:
             func_id = func_id_by_qname.get(p.function_qname)
             if func_id is None:
                 continue
@@ -233,8 +236,9 @@ class WriteToDbTask(Task):
         conn: sqlite3.Connection,
         class_id_by_qname: dict[str, int],
         func_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> None:
-        for d in self.task.decorators:
+        for d in parse_result.decorators:
             target_id = None
             target_kind = "function"
             target_id = func_id_by_qname.get(d.target_qname)
@@ -261,8 +265,10 @@ class WriteToDbTask(Task):
                 ),
             )
 
-    def _insert_imports(self, conn: sqlite3.Connection, module_id: int) -> None:
-        for imp in self.task.imports:
+    def _insert_imports(
+        self, conn: sqlite3.Connection, module_id: int, parse_result: ParseResult
+    ) -> None:
+        for imp in parse_result.imports:
             conn.execute(
                 """
                 INSERT INTO imports
@@ -283,9 +289,12 @@ class WriteToDbTask(Task):
             )
 
     def _insert_inheritance(
-        self, conn: sqlite3.Connection, class_id_by_qname: dict[str, int]
+        self,
+        conn: sqlite3.Connection,
+        class_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> None:
-        for inh in self.task.inheritance:
+        for inh in parse_result.inheritance:
             subclass_id = class_id_by_qname.get(inh.subclass_qname)
             if subclass_id is None:
                 continue
@@ -312,9 +321,12 @@ class WriteToDbTask(Task):
             )
 
     def _insert_calls(
-        self, conn: sqlite3.Connection, func_id_by_qname: dict[str, int]
+        self,
+        conn: sqlite3.Connection,
+        func_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> None:
-        for call in self.task.calls:
+        for call in parse_result.calls:
             caller_id = func_id_by_qname.get(call.caller_qname)
             if caller_id is None:
                 continue
@@ -336,9 +348,12 @@ class WriteToDbTask(Task):
             )
 
     def _insert_function_metrics(
-        self, conn: sqlite3.Connection, func_id_by_qname: dict[str, int]
+        self,
+        conn: sqlite3.Connection,
+        func_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
     ) -> None:
-        for m in self.task.function_metrics:
+        for m in parse_result.function_metrics:
             func_id = func_id_by_qname.get(m.function_qname)
             if func_id is None:
                 continue
