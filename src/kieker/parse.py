@@ -30,7 +30,6 @@ class ModuleInfo:
     module: str  # dotted, best-effort from path
     file: str  # path string
     is_external: bool = False  # always False for parsed source
-    primary_file: Optional[str] = None
 
 
 @dataclass
@@ -205,9 +204,7 @@ class _ModuleCollector(cst.CSTVisitor):
         self._func_stack: list[FunctionInfo] = []
 
         # Outputs
-        self.module: ModuleInfo = ModuleInfo(
-            module=module_name, file=filename, primary_file=filename
-        )
+        self.module: ModuleInfo = ModuleInfo(module=module_name, file=filename)
         self.classes: list[ClassInfo] = []
         self.functions: list[FunctionInfo] = []
         self.parameters: list[ParameterInfo] = []
