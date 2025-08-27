@@ -47,7 +47,9 @@ class WriteToDbTask(ResultTask[None]):
         self._insert_calls(conn, func_id_by_qname, parse_result)
         self._insert_function_metrics(conn, func_id_by_qname, parse_result)
 
-    def _insert_module(self, conn: sqlite3.Connection, parse_result: ParseResult) -> int:
+    def _insert_module(
+        self, conn: sqlite3.Connection, parse_result: ParseResult
+    ) -> int:
         module_info = parse_result.module_info
         read_result = self.task.read_file_task.get_result()
         file_hash = read_result.hash
@@ -65,7 +67,15 @@ class WriteToDbTask(ResultTask[None]):
               kieker_version = excluded.kieker_version,
               is_external    = excluded.is_external
             """,
-            (module_info.module, module_info.file, file_hash, size, mtime, self.version, 0),
+            (
+                module_info.module,
+                module_info.file,
+                file_hash,
+                size,
+                mtime,
+                self.version,
+                0,
+            ),
         )
         row = conn.execute(
             "SELECT id FROM modules WHERE module = ?", (module_info.module,)

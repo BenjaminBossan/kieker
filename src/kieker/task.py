@@ -48,6 +48,7 @@ class SummaryStat:
 
 TResult = TypeVar("TResult")
 
+
 class ResultTask(Generic[TResult]):
     """Idempotent task that returns a result on demand."""
 
