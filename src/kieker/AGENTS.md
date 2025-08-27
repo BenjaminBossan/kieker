@@ -1,6 +1,8 @@
 # AGENTS Instructions
 
 ## Development instructions
+- The source files and `schema.sql` are located in `src/kieker/`.
+- The tests are located in `tests/`.
 - Run `make checks` to format, lint, and type-check Python code.
 - Document public APIs and keep functions type annotated.
 - Prefer simple, functional code, isolate the non-functional part (e.g. to the CLI).
