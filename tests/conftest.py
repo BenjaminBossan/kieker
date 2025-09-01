@@ -14,6 +14,7 @@ HERE = Path(__file__).parent
 DBPATH = HERE / DBNAME
 REPO_URL = "https://github.com/skorch-dev/skorch.git"
 REPO_TAG = "v1.2.0"
+SCHEMA_PATH = Path(__file__).resolve().parents[1] / "src" / "kieker" / "schema.sql"
 
 
 def _create_db(path: Path) -> Path:
