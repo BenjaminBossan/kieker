@@ -11,7 +11,7 @@ Here is a short example that shows how to check out a code base, create a databa
 After installing kieker, first check out the repository and create the database:
 
 ```sh
-mkdir /tmp/kieker-example && cd /tmp/kieker-example
+cd /tmp
 git clone --depth 1 --branch v1.2.0 https://github.com/skorch-dev/skorch.git
 cd skorch
 kieker create skorch/ --exclude skorch/tests -o result.sqlite -v -j4
@@ -20,7 +20,7 @@ kieker create skorch/ --exclude skorch/tests -o result.sqlite -v -j4
 Then run the query against the db:
 
 ```sh
-sqlite3 -header -column result.sqlite "SELECT f.file, f.start_line, f.end_line, f.qualified_name
+sqlite3 -header -column result.sqlite "SELECT f.file, c.start_line call_line, f.start_line fn_start, f.end_line fn_end, f.qualified_name fn_name
 FROM calls c
 JOIN functions f ON f.id = c.caller_id
 WHERE c.callee_repr = 'np.asarray'
@@ -30,15 +30,15 @@ ORDER BY f.file, f.start_line;"
 This should show:
 
 ```
-file                                             start_line  end_line  qualified_name                                    
------------------------------------------------  ----------  --------  --------------------------------------------------
-/tmp/kieker-example/skorch/skorch/classifier.py  98          118       classifier.NeuralNetClassifier.classes_           
-/tmp/kieker-example/skorch/skorch/helper.py      262         268       helper.SliceDataset.__array__                     
-/tmp/kieker-example/skorch/skorch/helper.py      262         268       helper.SliceDataset.__array__                     
-/tmp/kieker-example/skorch/skorch/hf.py          46          64        hf._HuggingfaceTokenizerBase.get_feature_names_out
-/tmp/kieker-example/skorch/skorch/hf.py          126         148       hf._HuggingfaceTokenizerBase.inverse_transform    
-/tmp/kieker-example/skorch/skorch/hf.py          150         183       hf._HuggingfaceTokenizerBase.tokenize             
-/tmp/kieker-example/skorch/skorch/utils.py       127         164       utils.to_numpy
+file                              call_line  fn_start  fn_end  fn_name                                           
+--------------------------------  ---------  --------  ------  --------------------------------------------------
+/tmp/skorch/skorch/classifier.py  103        98        118     classifier.NeuralNetClassifier.classes_           
+/tmp/skorch/skorch/helper.py      267        262       268     helper.SliceDataset.__array__                     
+/tmp/skorch/skorch/helper.py      268        262       268     helper.SliceDataset.__array__                     
+/tmp/skorch/skorch/hf.py          61         46        64      hf._HuggingfaceTokenizerBase.get_feature_names_out
+/tmp/skorch/skorch/hf.py          148        126       148     hf._HuggingfaceTokenizerBase.inverse_transform    
+/tmp/skorch/skorch/hf.py          183        150       183     hf._HuggingfaceTokenizerBase.tokenize             
+/tmp/skorch/skorch/utils.py       150        127       164     utils.to_numpy    
 ```
 
 More examples [here](https://github.com/BenjaminBossan/kieker/blob/main/examples/usage-example.md).
