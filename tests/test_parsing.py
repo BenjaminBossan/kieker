@@ -34,7 +34,9 @@ class StringReadFileTask(ResultTask[ReadFileResult]):
 
 
 @contextmanager
-def pipeline(code: str, filename: str = "mod.py") -> Generator[sqlite3.Connection]:
+def pipeline(
+    code: str, filename: str = "mod.py"
+) -> Generator[sqlite3.Connection, None, None]:
     """A context manager running the parse => write pipeline."""
     read_task = StringReadFileTask(code, filename)
     parse_task = ParseModuleTask(read_task, roots=[Path(".")])
