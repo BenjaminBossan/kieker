@@ -9,8 +9,8 @@ from typing import Generator
 
 import kieker
 from conftest import PrettyRow, SCHEMA_PATH
-from kieker.ingest import ReadFileResult
 from kieker.parse import ParseModuleTask
+from kieker.read import ReadFileResult
 from kieker.task import ResultTask
 from kieker.write import WriteToDbTask, ensure_schema
 

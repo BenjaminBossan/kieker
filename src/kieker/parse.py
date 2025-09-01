@@ -12,8 +12,8 @@ from typing import Literal, Optional, Sequence
 import libcst as cst
 from libcst.metadata import MetadataWrapper, PositionProvider, ParentNodeProvider
 
+from .read import ReadFileTask
 from .task import ResultTask
-from .ingest import ReadFileTask
 
 
 @dataclass(frozen=True)

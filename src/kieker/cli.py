@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Sequence
 
 import kieker
-from .ingest import ReadFileTask, gather_read_file_tasks
 from .parse import ParseModuleTask
+from .read import ReadFileTask, gather_read_file_tasks
 from .task import TaskRunner
 from .write import WriteToDbTask, delete_modules, ensure_schema
 from .project_map import create_project_map

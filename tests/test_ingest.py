@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from kieker.ingest import gather_read_file_tasks
+from kieker.read import gather_read_file_tasks
 
 
 def _make_file(path: Path) -> None:
