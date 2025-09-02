@@ -15,6 +15,38 @@ kieker examples --list
 
 Only use `sed`, `cat`, `tail`, `grep` etc. if kieker does not work for the purpose.
 
+Two examples:
+
+If you search for the code of the function called `ResultTask`, instead of
+
+```
+$ rg "class ResultTask" src/kieker/*.py
+src/kieker/task.py
+48:class ResultTask(Generic[TResult]):
+$ sed -n '48,80p' src/kieker/task.py
+```
+
+do:
+
+```
+$ sqlite3 code.sqlite "SELECT def_text
+FROM classes
+WHERE qualified_name like '%ResultTask';"
+```
+
+To find each instance in the code where the `configure_logger` function is being called, run:
+
+```
+$ sqlite3 -header -column code.sqlite \
+"SELECT f.file, c.start_line call_line, f.start_line fn_start, f.end_line fn_end, f.qualified_name fn_name
+FROM calls c
+JOIN functions f ON f.id = c.caller_id
+WHERE c.callee_repr = 'configure_logger'
+ORDER BY f.file, f.start_line;"
+```
+
+Use the returned information to make targeted queries and changes to the code. If you need more examples, run `kieker examples --list` and follow from there.
+
 ## Development instructions
 - The source files and `schema.sql` are located in `src/kieker/`.
 - The tests are located in `tests/`.
