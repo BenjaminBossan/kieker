@@ -7,6 +7,8 @@ from pathlib import Path
 from textwrap import dedent
 from typing import Generator
 
+import libcst as cst
+
 import kieker
 from conftest import PrettyRow, SCHEMA_PATH
 from kieker.parse import ParseModuleTask, infer_module_name
@@ -236,12 +238,15 @@ def test_control_flow_metrics_and_calls() -> None:
                 pass
     """
     with pipeline(code) as conn:
-        metrics = conn.execute(
+        rows = conn.execute(
             """
             SELECT f.qualified_name AS function_qname, m.cyclomatic, m.lines_of_code
             FROM function_metrics m JOIN functions f ON m.function_id = f.id
             """
-        ).fetchone()
+        ).fetchall()
+        assert len(rows) == 1
+
+        metrics = rows[0]
         assert metrics.function_qname == "mod.complicated"
         assert metrics.cyclomatic == 8
         assert metrics.lines_of_code == 15
@@ -271,3 +276,104 @@ def test_infer_module_name(tmp_path: Path) -> None:
     p = file2.with_suffix("")
     expected = ".".join([part for part in p.parts if part not in (".", "")])
     assert fallback == expected
+
+
+def test_import_aliases() -> None:
+    """`import x as y` records the alias and import type."""
+
+    code = """
+    import json as js
+    """
+    with pipeline(code) as conn:
+        rows = conn.execute(
+            "SELECT imported, alias, is_from_import FROM imports"
+        ).fetchall()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.imported == "json"
+    assert row.alias == "js"
+    assert row.is_from_import == 0
+
+
+def test_property_getter_kind() -> None:
+    """Property getters are marked with the correct kind."""
+
+    code = """
+    class A:
+        @property
+        def value(self):
+            return 1
+    """
+    with pipeline(code) as conn:
+        rows = conn.execute(
+            """
+            SELECT qualified_name, is_property, property_kind
+            FROM functions
+            WHERE qualified_name = 'mod.A.value'
+            """
+        ).fetchall()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.is_property == 1
+    assert row.property_kind == "getter"
+
+
+def test_leave_classdef_clears_stack() -> None:
+    """Functions defined after a class are not treated as methods."""
+
+    code = """
+    class A:
+        def method(self):
+            pass
+
+    def outside():
+        pass
+    """
+    with pipeline(code) as conn:
+        funcs = conn.execute(
+            "SELECT qualified_name, is_method FROM functions ORDER BY id"
+        ).fetchall()
+
+    assert len(funcs) == 2
+    fn_map = {row.qualified_name: row for row in funcs}
+    assert fn_map["mod.A.method"].is_method == 1
+    assert fn_map["mod.outside"].is_method == 0
+
+
+def test_try_multiple_except_complexity() -> None:
+    """Try blocks add one plus per-except to cyclomatic complexity."""
+
+    code = """
+    def tricky():
+        try:
+            pass
+        except ValueError:
+            pass
+        except TypeError:
+            pass
+    """
+    with pipeline(code) as conn:
+        rows = conn.execute(
+            """
+            SELECT m.cyclomatic
+            FROM function_metrics m JOIN functions f ON m.function_id = f.id
+            WHERE f.qualified_name = 'mod.tricky'
+            """
+        ).fetchall()
+
+    assert len(rows) == 1
+    metric = rows[0]
+    assert metric.cyclomatic == 4
+
+
+def test_dotted_name_variants() -> None:
+    """`_dotted_name` resolves different CST node kinds."""
+    from kieker.parse import _dotted_name
+
+    assert _dotted_name(cst.parse_expression("name")) == "name"
+    assert _dotted_name(cst.parse_expression("pkg.mod.attr")) == "pkg.mod.attr"
+    assert _dotted_name(cst.parse_expression("decorator(arg)")) == "decorator"
+    assert _dotted_name(cst.parse_expression("typing.List[int]")) == "typing.List"
+    assert _dotted_name(cst.parse_expression("42")) == ""
