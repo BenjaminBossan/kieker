@@ -393,6 +393,7 @@ def cmd_examples(args: argparse.Namespace) -> None:
         # List mode
         for ex in EXAMPLES:
             print(f"{ex['id']}. {ex['title']}")
+        print("Call `kieker examples 0` etc. to see the specific example")
         if args.id is None:
             return
 
