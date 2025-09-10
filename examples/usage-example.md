@@ -224,3 +224,21 @@ module             imported           file                              start_li
 -----------------  -----------------  --------------------------------  ----------
 callbacks.logging  tabulate.tabulate  /tmp/skorch/callbacks/logging.py  13
 ```
+
+### Find methods modifying reading the `module_` attribute on `NeuralNet` or assigning to it
+
+```sh
+sqlite3 -header -column result.sqlite "SELECT f.qualified_name, a.op_kind, f.file, f.start_line
+FROM attributes a
+JOIN classes c ON a.class_id = c.id
+JOIN functions f ON a.function_id = f.id
+WHERE c.qualified_name = 'net.NeuralNet' AND a.attribute = 'module_' AND a.op_kind IN ('read', 'assign','augassign');"
+```
+
+```
+qualified_name                   op_kind  file                              start_line
+-------------------------------  -------  --------------------------------  ----------
+net.NeuralNet.initialize_module  assign   /tmp/skorch/skorch/skorch/net.py  618       
+net.NeuralNet.infer              read     /tmp/skorch/skorch/skorch/net.py  1536      
+net.NeuralNet.infer              read     /tmp/skorch/skorch/skorch/net.py  1536 
+```

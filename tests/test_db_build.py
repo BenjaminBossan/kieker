@@ -22,6 +22,7 @@ def test_schema_tables_exist(conn: sqlite3.Connection) -> None:
         "imports",
         "inheritance",
         "calls",
+        "attributes",
         "function_metrics",
     }
     missing = expected - names

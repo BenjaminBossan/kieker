@@ -320,6 +320,90 @@ def test_property_getter_kind() -> None:
     assert row.property_kind == "getter"
 
 
+def test_attribute_tracking() -> None:
+    """Attribute reads, writes, and properties are recorded."""
+
+    code = """
+    bar = 1
+    print(bar)
+
+    class Foo:
+        def mymethod(self, value):
+            self.bar = value
+            self.bar += 1
+            x = self.bar
+            del self.bar
+
+        @property
+        def baz(self):
+            return self.bar
+
+        @baz.setter
+        def baz(self, v):
+            self.bar = v
+
+        spam = 123
+    """
+
+    with pipeline(code) as conn:
+        rows = conn.execute(
+            "SELECT owner_kind, attribute, op_kind, function_id IS NOT NULL AS has_fn, start_line FROM attributes"
+        ).fetchall()
+
+    assert len(rows) == 12
+
+    # check selected attributes, checking everything would be tedious
+    # globals
+    assert rows[0].owner_kind == "module"
+    assert rows[0].attribute == "bar"
+    assert rows[0].op_kind == "assign"
+    assert rows[0].has_fn == 0
+    assert rows[0].start_line == 2
+    assert rows[1].op_kind == "read"
+
+    # Foo.mymethod
+    assert rows[2].owner_kind == "instance"
+    assert rows[2].attribute == "bar"
+    assert rows[2].op_kind == "assign"
+    assert rows[2].has_fn == 1
+    assert rows[2].start_line == 7
+    assert rows[3].op_kind == "augassign"
+    assert rows[4].op_kind == "read"
+    assert rows[5].op_kind == "delete"
+
+    # Foo.baz property
+    assert rows[6].owner_kind == "class"
+    assert rows[6].attribute == "baz"
+    assert rows[6].op_kind == "property"
+    assert rows[6].has_fn == 1
+    assert rows[6].start_line == 13
+    assert rows[7].owner_kind == "instance"
+    assert rows[7].op_kind == "read"
+
+    # Foo.baz setter
+    assert rows[8].owner_kind == "class"
+    assert rows[8].op_kind == "setter"
+    assert rows[8].attribute == "baz"
+    assert rows[8].has_fn == 1
+    assert rows[8].start_line == 17
+    # 9 is `setter` itself of `baz.setter`
+    assert rows[9].owner_kind == "module"
+    assert rows[9].op_kind == "read"
+    assert rows[9].attribute == "setter"
+    assert rows[9].has_fn == 1
+    assert rows[10].owner_kind == "instance"
+    assert rows[10].attribute == "bar"
+    assert rows[11].op_kind == "assign"
+    assert rows[11].has_fn == 0
+
+    # spam class attribute
+    assert rows[11].owner_kind == "class"
+    assert rows[11].attribute == "spam"
+    assert rows[11].op_kind == "assign"
+    assert rows[11].has_fn == 0
+    assert rows[11].start_line == 20
+
+
 def test_leave_classdef_clears_stack() -> None:
     """Functions defined after a class are not treated as methods."""
 

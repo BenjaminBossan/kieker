@@ -107,6 +107,22 @@ CREATE TABLE IF NOT EXISTS calls (
   end_col          INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS attributes (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  function_id      INTEGER REFERENCES functions(id) ON DELETE CASCADE,
+  module_id        INTEGER NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
+  class_id         INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+  owner_kind       TEXT NOT NULL,              -- module | class | instance
+  attribute        TEXT NOT NULL,
+  op_kind          TEXT NOT NULL,              -- read | assign | augassign | delete | property | setter | deleter
+  value_repr       TEXT,
+  file             TEXT NOT NULL,
+  start_line       INTEGER NOT NULL,
+  start_col        INTEGER NOT NULL,
+  end_line         INTEGER NOT NULL,
+  end_col          INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS function_metrics (
   function_id      INTEGER PRIMARY KEY REFERENCES functions(id) ON DELETE CASCADE,
   lines_of_code    INTEGER NOT NULL,
@@ -119,6 +135,9 @@ CREATE INDEX IF NOT EXISTS idx_functions_qname  ON functions(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_classes_qname    ON classes(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_calls_caller     ON calls(caller_id);
 CREATE INDEX IF NOT EXISTS idx_imports_module   ON imports(module_id);
+CREATE INDEX IF NOT EXISTS idx_attributes_attr  ON attributes(attribute);
+CREATE INDEX IF NOT EXISTS idx_attributes_cls   ON attributes(class_id, attribute);
+CREATE INDEX IF NOT EXISTS idx_attributes_mod   ON attributes(module_id, attribute);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_classes_mod_qname
   ON classes(module_id, qualified_name);

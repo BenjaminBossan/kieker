@@ -7,10 +7,16 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional, Sequence
+from typing import Iterator, Literal, Optional, Sequence
 
 import libcst as cst
-from libcst.metadata import MetadataWrapper, PositionProvider, ParentNodeProvider
+from libcst.metadata import (
+    MetadataWrapper,
+    PositionProvider,
+    ParentNodeProvider,
+    ExpressionContextProvider,
+    ExpressionContext,
+)
 
 from .read import ReadFileTask
 from .task import ResultTask
@@ -106,6 +112,25 @@ class FunctionMetrics:
 
 
 @dataclass
+class AttributeInfo:
+    owner_kind: Literal["module", "class", "instance"]
+    owner_qname: str
+    attribute: str
+    op_kind: Literal[
+        "read",
+        "assign",
+        "augassign",
+        "delete",
+        "property",
+        "setter",
+        "deleter",
+    ]
+    value_repr: Optional[str]
+    function_qname: Optional[str]
+    location: Location
+
+
+@dataclass
 class ParseResult:
     raw_content: str
     module_info: ModuleInfo
@@ -116,6 +141,7 @@ class ParseResult:
     imports: list[ImportInfo]
     inheritance: list[InheritanceEdge]
     calls: list[CallInfo]
+    attributes: list[AttributeInfo]
     function_metrics: list[FunctionMetrics]
 
 
@@ -177,7 +203,11 @@ def _dotted_name(expr: cst.CSTNode) -> str:
 
 
 class _ModuleCollector(cst.CSTVisitor):
-    METADATA_DEPENDENCIES = (PositionProvider, ParentNodeProvider)
+    METADATA_DEPENDENCIES = (
+        PositionProvider,
+        ParentNodeProvider,
+        ExpressionContextProvider,
+    )
 
     def __init__(self, module_name: str, filename: str, module: cst.Module) -> None:
         self.module_name = module_name
@@ -198,6 +228,11 @@ class _ModuleCollector(cst.CSTVisitor):
         self.inheritance: list[InheritanceEdge] = []
         self.calls: list[CallInfo] = []
         self.function_metrics: list[FunctionMetrics] = []
+        self.attributes: list[AttributeInfo] = []
+
+        # Track local variable names to distinguish global reads
+        self._locals_stack: list[set[str]] = []
+        self._module_attrs: set[str] = set()
 
         # Scratch for metrics (per function cyclomatic)
         self._current_cyclomatic: list[int] = []  # parallel to func stack
@@ -217,6 +252,140 @@ class _ModuleCollector(cst.CSTVisitor):
 
     def _current_func_qname(self) -> Optional[str]:
         return self._func_stack[-1].qualified_name if self._func_stack else None
+
+    def _resolve_owner(
+        self, expr: cst.CSTNode
+    ) -> tuple[Literal["module", "class", "instance"], str]:
+        if isinstance(expr, cst.Name):
+            name = expr.value
+            if name == "self" and self._class_stack:
+                return "instance", self._class_stack[-1].qualified_name
+            if name == "cls" and self._class_stack:
+                return "class", self._class_stack[-1].qualified_name
+            for cls in reversed(self._class_stack):
+                if name == cls.name:
+                    return "class", cls.qualified_name
+        return "module", self.module_name
+
+    def _add_attribute(
+        self,
+        owner_kind: Literal["module", "class", "instance"],
+        owner_qname: str,
+        attribute: str,
+        op_kind: Literal[
+            "read",
+            "assign",
+            "augassign",
+            "delete",
+            "property",
+            "setter",
+            "deleter",
+        ],
+        value_repr: Optional[str],
+        node: cst.CSTNode,
+    ) -> None:
+        self.attributes.append(
+            AttributeInfo(
+                owner_kind=owner_kind,
+                owner_qname=owner_qname,
+                attribute=attribute,
+                op_kind=op_kind,
+                value_repr=value_repr,
+                function_qname=self._current_func_qname(),
+                location=_to_location(self.filename, self._position(node)),
+            )
+        )
+
+    def _handle_assignment_target(
+        self,
+        target: cst.CSTNode,
+        op_kind: Literal["assign", "augassign", "delete"],
+        value_repr: Optional[str],
+    ) -> None:
+        if isinstance(target, cst.Name):
+            if self._func_stack:
+                self._locals_stack[-1].add(target.value)
+                return
+            ok: Literal["class", "module"] = "class" if self._class_stack else "module"
+            owner_qname = (
+                self._class_stack[-1].qualified_name
+                if self._class_stack
+                else self.module_name
+            )
+            if ok == "module":
+                self._module_attrs.add(target.value)
+            self._add_attribute(
+                ok, owner_qname, target.value, op_kind, value_repr, target
+            )
+        elif isinstance(target, cst.Attribute):
+            attr_name = (
+                target.attr.value
+                if isinstance(target.attr, cst.Name)
+                else _dotted_name(target.attr)
+            )
+            owner_kind, owner_qname = self._resolve_owner(target.value)
+            self._add_attribute(
+                owner_kind, owner_qname, attr_name, op_kind, value_repr, target
+            )
+
+    def visit_Assign(self, node: cst.Assign) -> None:
+        value_repr = self._get_code(node.value)
+        for t in node.targets:
+            self._handle_assignment_target(t.target, "assign", value_repr)
+
+    def visit_AnnAssign(self, node: cst.AnnAssign) -> None:
+        value_repr = self._get_code(node.value)
+        self._handle_assignment_target(node.target, "assign", value_repr)
+
+    def visit_AugAssign(self, node: cst.AugAssign) -> None:
+        value_repr = self._get_code(node.value)
+        self._handle_assignment_target(node.target, "augassign", value_repr)
+
+    def visit_Del(self, node: cst.Del) -> None:
+        def iter_targets(expr: cst.CSTNode) -> Iterator[cst.CSTNode]:
+            if isinstance(expr, cst.Tuple):
+                for el in expr.elements:
+                    if el.value is not None:
+                        yield from iter_targets(el.value)
+            else:
+                yield expr
+
+        for t in iter_targets(node.target):
+            self._handle_assignment_target(t, "delete", None)
+
+    def visit_Attribute(self, node: cst.Attribute) -> Optional[bool]:
+        ctx = self.get_metadata(ExpressionContextProvider, node)
+        if ctx is ExpressionContext.LOAD:
+            attr_name = (
+                node.attr.value
+                if isinstance(node.attr, cst.Name)
+                else _dotted_name(node.attr)
+            )
+            owner_kind, owner_qname = self._resolve_owner(node.value)
+            self._add_attribute(owner_kind, owner_qname, attr_name, "read", None, node)
+        return True
+
+    def visit_Name(self, node: cst.Name) -> Optional[bool]:
+        parent = self.get_metadata(ParentNodeProvider, node)
+        if isinstance(
+            parent, (cst.Attribute, cst.Param, cst.ImportAlias, cst.Decorator)
+        ):
+            return True
+        ctx = self.get_metadata(ExpressionContextProvider, node)
+        if ctx is ExpressionContext.LOAD:
+            if self._func_stack:
+                if node.value in self._locals_stack[-1]:
+                    return True
+                if node.value in self._module_attrs:
+                    self._add_attribute(
+                        "module", self.module_name, node.value, "read", None, node
+                    )
+            else:
+                if node.value in self._module_attrs:
+                    self._add_attribute(
+                        "module", self.module_name, node.value, "read", None, node
+                    )
+        return True
 
     def _position(self, node: cst.CSTNode) -> cst.metadata.CodeRange:
         return self.get_metadata(PositionProvider, node)
@@ -327,6 +496,25 @@ class _ModuleCollector(cst.CSTVisitor):
         pos = self._position(node)
         doc = node.get_docstring()
 
+        # Track local names (parameters)
+        params = node.params
+        local_names: set[str] = set()
+        for p in (
+            list(params.params)
+            + list(params.posonly_params)
+            + list(params.kwonly_params)
+        ):
+            if isinstance(p, cst.Param):
+                local_names.add(p.name.value)
+        if isinstance(params.star_arg, cst.Param) and isinstance(
+            params.star_arg.name, cst.Name
+        ):
+            local_names.add(params.star_arg.name.value)
+        if isinstance(params.star_kwarg, cst.Param):
+            local_names.add(params.star_kwarg.name.value)
+
+        self._locals_stack.append(local_names)
+
         dec_names = [_dotted_name(d.decorator) for d in node.decorators]
         # Property flags
         is_prop_getter = any(
@@ -376,6 +564,32 @@ class _ModuleCollector(cst.CSTVisitor):
         self._func_stack.append(fn)
         self._current_cyclomatic.append(1)
         self._function_locs.append(max(1, pos.end.line - pos.start.line + 1))
+
+        if is_prop:
+            owner_kind: Literal["class", "module"] = (
+                "class" if self._class_stack else "module"
+            )
+            owner_qname = (
+                self._class_stack[-1].qualified_name
+                if self._class_stack
+                else self.module_name
+            )
+            attr_op: Literal["property", "setter", "deleter"] = "property"
+            if property_kind == "setter":
+                attr_op = "setter"
+            elif property_kind == "deleter":
+                attr_op = "deleter"
+            self.attributes.append(
+                AttributeInfo(
+                    owner_kind=owner_kind,
+                    owner_qname=owner_qname,
+                    attribute=node.name.value,
+                    op_kind=attr_op,
+                    value_repr=None,
+                    function_qname=qname,
+                    location=_to_location(self.filename, pos),
+                )
+            )
 
         # record decorators
         for dec, name in zip(node.decorators, dec_names):
@@ -488,6 +702,7 @@ class _ModuleCollector(cst.CSTVisitor):
         fn = self._func_stack.pop()
         cyclo = self._current_cyclomatic.pop()
         loc = self._function_locs.pop()
+        self._locals_stack.pop()
         self.function_metrics.append(
             FunctionMetrics(
                 function_qname=fn.qualified_name, lines_of_code=loc, cyclomatic=cyclo
@@ -577,6 +792,7 @@ class ParseModuleTask(ResultTask[ParseResult]):
             imports=collector.imports,
             inheritance=collector.inheritance,
             calls=collector.calls,
+            attributes=collector.attributes,
             function_metrics=collector.function_metrics,
         )
 

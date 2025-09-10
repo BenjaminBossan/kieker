@@ -42,6 +42,9 @@ class WriteToDbTask(ResultTask[None]):
         self._insert_imports(conn, module_id, parse_result)
         self._insert_inheritance(conn, class_id_by_qname, parse_result)
         self._insert_calls(conn, func_id_by_qname, parse_result)
+        self._insert_attributes(
+            conn, module_id, class_id_by_qname, func_id_by_qname, parse_result
+        )
         self._insert_function_metrics(conn, func_id_by_qname, parse_result)
 
     def _insert_module(
@@ -379,6 +382,51 @@ class WriteToDbTask(ResultTask[None]):
                 INSERT INTO calls
                 (caller_id, callee_repr, file, start_line, start_col, end_line, end_col)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+
+    def _insert_attributes(
+        self,
+        conn: sqlite3.Connection,
+        module_id: int,
+        class_id_by_qname: dict[str, int],
+        func_id_by_qname: dict[str, int],
+        parse_result: ParseResult,
+    ) -> None:
+        rows = []
+        for a in parse_result.attributes:
+            class_id = None
+            if a.owner_kind in ("class", "instance"):
+                class_id = class_id_by_qname.get(a.owner_qname)
+            func_id = None
+            if a.function_qname:
+                func_id = func_id_by_qname.get(a.function_qname)
+            rows.append(
+                (
+                    func_id,
+                    module_id,
+                    class_id,
+                    a.owner_kind,
+                    a.attribute,
+                    a.op_kind,
+                    a.value_repr,
+                    a.location.file,
+                    a.location.start_line,
+                    a.location.start_col,
+                    a.location.end_line,
+                    a.location.end_col,
+                )
+            )
+
+        if rows:
+            conn.executemany(
+                """
+                INSERT INTO attributes (
+                    function_id, module_id, class_id, owner_kind, attribute, op_kind,
+                    value_repr, file, start_line, start_col, end_line, end_col
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )

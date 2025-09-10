@@ -2,7 +2,7 @@
 
 Query your Python codebase like a database.
 
-This project parses Python source files into a structured SQLite database, so you can write SQL queries against modules, classes, functions, parameters, decorators, imports, inheritance, calls, and metrics (LOC, cyclomatic complexity, etc.). The main intent is to provide a smarter and more economic code exploration tool for agentic coding that is easy to pick up for an LLM because it is just SQL.
+This project parses Python source files into a structured SQLite database, so you can write SQL queries against modules, classes, functions, parameters, decorators, imports, inheritance, attributes, calls, and metrics (LOC, cyclomatic complexity, etc.). The main intent is to provide a smarter and more economic code exploration tool for agentic coding that is easy to pick up for an LLM because it is just SQL.
 
 ## Example
 

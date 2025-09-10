@@ -7,6 +7,7 @@ from typing import Any, Iterator
 import pytest
 
 from kieker.cli import create
+from kieker.write import ensure_schema
 
 
 DBNAME = "db-skorch.sqlite"
@@ -77,6 +78,7 @@ def conn(db_path: Path) -> Iterator[sqlite3.Connection]:
         # Strongly recommended for correct FK behavior when you add tests that mutate
         con.execute("PRAGMA foreign_keys = ON;")
         con.row_factory = PrettyRow
+        ensure_schema(con, SCHEMA_PATH)
         yield con
     finally:
         con.close()
