@@ -1,3 +1,5 @@
+"""Tests using a real code base, in this case skorch v1.2.0"""
+
 import os
 import sqlite3
 
