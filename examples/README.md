@@ -225,7 +225,7 @@ module             imported           file                              start_li
 callbacks.logging  tabulate.tabulate  /tmp/skorch/callbacks/logging.py  13
 ```
 
-### Find methods modifying reading the `module_` attribute on `NeuralNet` or assigning to it
+### Find methods reading or modifying the `module_` attribute on the `NeuralNet` class
 
 ```sh
 sqlite3 -header -column result.sqlite "SELECT f.qualified_name, a.op_kind, f.file, f.start_line
