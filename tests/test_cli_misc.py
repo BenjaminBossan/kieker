@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import sqlite3
 import textwrap
@@ -14,6 +15,7 @@ def _make_create_args(
     paths: list[str],
     output: Path | None,
     dry_run: bool,
+    json: bool = False,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         paths=paths,
@@ -24,6 +26,7 @@ def _make_create_args(
         jobs=1,
         force=False,
         dry_run=dry_run,
+        json=json,
         verbose=0,
         no_gitignore=False,
     )
@@ -52,6 +55,23 @@ class TestCmdCreate:
         with caplog.at_level(logging.INFO):
             cmd_create(args)
         assert "1 added" in caplog.text
+
+    def test_dry_run_json(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "mod.py").write_text("def foo():\n    return 1\n")
+        db = tmp_path / "out.sqlite"
+        args = _make_create_args([str(pkg)], db, True)
+        args.json = True
+        cmd_create(args)
+        payload = json.loads(capsys.readouterr().out)
+        mod_file = (pkg / "mod.py").as_posix()
+        assert payload["summary"] == {"added": 1, "modified": 0, "deleted": 0}
+        assert payload["added"] == [mod_file]
+        assert payload["modified"] == []
+        assert payload["deleted"] == []
 
     def test_no_output_without_dry_run_exits(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -108,7 +128,7 @@ class TestCmdMap:
         args = _make_create_args([str(pkg)], db, False)
         cmd_create(args)
 
-        args_map = argparse.Namespace(db=db)
+        args_map = argparse.Namespace(db=db, json=False)
         cmd_map(args_map)
         out = capsys.readouterr().out.strip().splitlines()
         mod_file = (pkg / "mod.py").as_posix()
@@ -116,6 +136,65 @@ class TestCmdMap:
         assert f"class C  {mod_file}:1" in out[1]
         assert f"def m {mod_file}:2" in out[2]
         assert f"def f  {mod_file}:6" in out[3]
+
+    def test_outputs_json(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "mod.py").write_text(
+            textwrap.dedent(
+                """\
+                class C:
+                    def m(self):
+                        pass
+
+
+                def f():
+                    pass
+                """
+            )
+        )
+        db = tmp_path / "db.sqlite"
+        args = _make_create_args([str(pkg)], db, False)
+        cmd_create(args)
+
+        args_map = argparse.Namespace(db=db, json=True)
+        cmd_map(args_map)
+        payload = json.loads(capsys.readouterr().out)
+        mod_file = (pkg / "mod.py").as_posix()
+        assert payload == {
+            "modules": [
+                {
+                    "name": "mod",
+                    "file": mod_file,
+                    "classes": [
+                        {
+                            "name": "C",
+                            "file": mod_file,
+                            "line": 1,
+                            "col": 0,
+                            "methods": [
+                                {
+                                    "name": "m",
+                                    "file": mod_file,
+                                    "line": 2,
+                                    "col": 4,
+                                }
+                            ],
+                        }
+                    ],
+                    "functions": [
+                        {
+                            "name": "f",
+                            "file": mod_file,
+                            "line": 6,
+                            "col": 0,
+                        }
+                    ],
+                }
+            ]
+        }
 
 
 class TestMain:
@@ -132,6 +211,11 @@ class TestMain:
         main(["examples", "--list"])
         out = capsys.readouterr().out.strip()
         assert out.startswith("0.")
+
+    def test_examples_json_branch(self, capsys: pytest.CaptureFixture[str]) -> None:
+        main(["examples", "--list", "--json"])
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["examples"][0]["id"] == "0"
 
 
 class TestConfigureLogger:

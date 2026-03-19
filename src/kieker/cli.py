@@ -1,4 +1,5 @@
 import argparse
+import json
 import sqlite3
 import sys
 import textwrap
@@ -180,6 +181,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Show files that would be analyzed and exit.",
     )
     p_create.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON for dry-run output.",
+    )
+    p_create.add_argument(
         "--force",
         action="store_true",
         help="Reparse all files regardless of modifications.",
@@ -208,10 +214,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p_examples.add_argument(
         "-l", "--list", action="store_true", help="List available examples."
     )
+    p_examples.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
 
     # map
     p_map = sub.add_parser("map", help="Print a map of modules, classes and functions.")
     p_map.add_argument("db", type=Path, help="Path to SQLite database file.")
+    p_map.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON.",
+    )
     return parser.parse_args(argv)
 
 
@@ -232,6 +248,10 @@ class PlanResult:
     added: list[str]
     modified: list[str]
     deleted: list[str]
+
+
+def _print_json(data: object) -> None:
+    print(json.dumps(data, indent=2, sort_keys=True))
 
 
 def create_plan(
@@ -364,6 +384,20 @@ def cmd_create(args: argparse.Namespace) -> None:
     )
 
     if args.dry_run:
+        if args.json:
+            _print_json(
+                {
+                    "added": plan.added,
+                    "modified": plan.modified,
+                    "deleted": plan.deleted,
+                    "summary": {
+                        "added": len(plan.added),
+                        "modified": len(plan.modified),
+                        "deleted": len(plan.deleted),
+                    },
+                }
+            )
+            return
         logger.info(
             "Plan: %d added, %d modified, %d deleted",
             len(plan.added),
@@ -423,10 +457,20 @@ def cmd_create(args: argparse.Namespace) -> None:
 
 def cmd_examples(args: argparse.Namespace) -> None:
     if args.list or args.id is None:
-        # List mode
-        for ex in EXAMPLES:
-            print(f"{ex['id']}. {ex['title']}")
-        print("Call `kieker examples 0` etc. to see the specific example")
+        if args.json:
+            _print_json(
+                {
+                    "examples": [
+                        {"id": ex["id"], "title": ex["title"], "sql": ex["sql"]}
+                        for ex in EXAMPLES
+                    ]
+                }
+            )
+        else:
+            # List mode
+            for ex in EXAMPLES:
+                print(f"{ex['id']}. {ex['title']}")
+            print("Call `kieker examples 0` etc. to see the specific example")
         if args.id is None:
             return
 
@@ -435,6 +479,12 @@ def cmd_examples(args: argparse.Namespace) -> None:
     if not ex:
         logger.error("Unknown example id: %s", args.id)
         sys.exit(2)
+
+    if args.json:
+        _print_json(
+            {"example": {"id": ex["id"], "title": ex["title"], "sql": ex["sql"]}}
+        )
+        return
 
     print(f"-- Example {ex['id']}: {ex['title']}\n")
     print(ex["sql"])
@@ -446,6 +496,47 @@ def cmd_map(args: argparse.Namespace) -> None:
         modules = create_project_map(conn)
     finally:
         conn.close()
+
+    if args.json:
+        _print_json(
+            {
+                "modules": [
+                    {
+                        "name": module.name,
+                        "file": module.file,
+                        "classes": [
+                            {
+                                "name": cls.name,
+                                "file": cls.file,
+                                "line": cls.line,
+                                "col": cls.col,
+                                "methods": [
+                                    {
+                                        "name": func.name,
+                                        "file": func.file,
+                                        "line": func.line,
+                                        "col": func.col,
+                                    }
+                                    for func in cls.methods
+                                ],
+                            }
+                            for cls in module.classes
+                        ],
+                        "functions": [
+                            {
+                                "name": func.name,
+                                "file": func.file,
+                                "line": func.line,
+                                "col": func.col,
+                            }
+                            for func in module.functions
+                        ],
+                    }
+                    for module in modules
+                ]
+            }
+        )
+        return
 
     for module in modules:
         print(f"{module.name}  {module.file}")

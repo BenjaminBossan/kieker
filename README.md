@@ -89,6 +89,12 @@ Subsequent runs update only files whose contents changed. Use `--force` to
 re-parse everything from scratch. Use `--dry-run` to see which files would be
 analyzed without writing anything.
 
+For agent-friendly planning output, combine `--dry-run` with `--json`:
+
+```sh
+kieker create src/ --dry-run --json
+```
+
 ### Explore example queries
 
 The CLI ships with some predefined queries:
@@ -103,12 +109,25 @@ Show example 0:
 kieker examples 0
 ```
 
+For machine-readable output:
+
+```sh
+kieker examples --list --json
+kieker examples 0 --json
+```
+
 ### Show a project map
 
 Generate a tree of modules, classes, and functions:
 
 ```sh
 kieker map code.sqlite
+```
+
+For machine-readable output:
+
+```sh
+kieker map code.sqlite --json
 ```
 
 ### Run queries yourself
@@ -168,6 +187,7 @@ Use `kieker examples --list` for example queries, then adapt them to your needs.
 - **Use `def_text` to read code.** Instead of `cat file.py | sed -n '10,30p'`, query `SELECT def_text FROM functions WHERE qualified_name LIKE '%my_func'`. This returns exactly the function body with no manual line-range math.
 - **Chain queries.** Use the output of one query (e.g. a `qualified_name`) as input to the next. For example: find a class, then find all calls within its methods, then read the callee's source.
 - **Re-query after edits.** If you modify source files, run `kieker create src/ -o code.sqlite` again — it only re-parses changed files.
+- **Prefer JSON when a command is feeding another tool.** `kieker examples --json`, `kieker map --json`, and `kieker create --dry-run --json` are easier for agents to consume reliably than formatted text.
 ````
 
 ## Limitations
