@@ -25,6 +25,7 @@ def _make_create_args(
         force=False,
         dry_run=dry_run,
         verbose=0,
+        no_gitignore=False,
     )
 
 

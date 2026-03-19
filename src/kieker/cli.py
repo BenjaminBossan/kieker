@@ -191,6 +191,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=1,
         help="Number of worker processes (default: 1, 0 uses CPU count).",
     )
+    p_create.add_argument(
+        "--no-gitignore",
+        action="store_true",
+        help="Do not respect .gitignore when discovering files.",
+    )
 
     # examples
     p_examples = sub.add_parser(
@@ -234,6 +239,7 @@ def create_plan(
     exclude: list[str] | None = None,
     jobs: int = 1,
     force: bool = False,
+    respect_gitignore: bool = True,
 ) -> PlanResult:
     schema = schema or Path(__file__).with_name("schema.sql")
     if roots_str:
@@ -242,7 +248,11 @@ def create_plan(
         roots = [Path(p).resolve() for p in paths]
 
     exclude_paths = [Path(x).resolve() for x in (exclude or [])]
-    read_tasks = list(gather_read_file_tasks(paths, exclude=exclude_paths))
+    read_tasks = list(
+        gather_read_file_tasks(
+            paths, exclude=exclude_paths, respect_gitignore=respect_gitignore
+        )
+    )
     read_runner = TaskRunner[ReadFileTask](tasks=read_tasks, jobs=jobs)
     read_tasks = read_runner.run()
 
@@ -302,6 +312,7 @@ def create(
     jobs: int = 1,
     force: bool = False,
     plan: PlanResult | None = None,
+    respect_gitignore: bool = True,
 ) -> TaskRunner[ParseModuleTask]:
     schema = schema or Path(__file__).with_name("schema.sql")
     if plan is None:
@@ -313,6 +324,7 @@ def create(
             exclude=exclude,
             jobs=jobs,
             force=force,
+            respect_gitignore=respect_gitignore,
         )
     parse_runner = TaskRunner[ParseModuleTask](tasks=plan.tasks, jobs=jobs)
     parse_tasks = parse_runner.run()
@@ -332,6 +344,7 @@ def create(
 
 
 def cmd_create(args: argparse.Namespace) -> None:
+    respect_gitignore = not args.no_gitignore
     plan = create_plan(
         paths=[Path(p) for p in args.paths],
         output=args.output,
@@ -340,6 +353,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         exclude=args.exclude,
         jobs=args.jobs,
         force=args.force,
+        respect_gitignore=respect_gitignore,
     )
 
     if args.dry_run:
@@ -366,6 +380,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         jobs=args.jobs,
         force=args.force,
         plan=plan,
+        respect_gitignore=respect_gitignore,
     )
     logger.info("Wrote database to %s", args.output)
     if task_runner.summary:

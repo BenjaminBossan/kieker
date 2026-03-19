@@ -18,6 +18,7 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
     "libcst>=1.8.2",
+    "pathspec>=0.12",
 ]
 
 [project.optional-dependencies]

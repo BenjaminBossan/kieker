@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Sequence
 
+from pathspec import PathSpec
+
 from .task import ResultTask
 
 
@@ -40,8 +42,19 @@ def _is_valid_file(filename: str | Path) -> bool:
     return Path(filename).suffix == ".py"
 
 
+def _load_gitignore_spec(root: Path) -> PathSpec | None:
+    """Load .gitignore patterns from a directory, returning None if absent."""
+    gitignore = root / ".gitignore"
+    if not gitignore.is_file():
+        return None
+    lines = gitignore.read_text(encoding="utf-8").splitlines()
+    return PathSpec.from_lines("gitwildmatch", lines)
+
+
 def gather_read_file_tasks(
-    paths: Sequence[Path], exclude: Sequence[Path]
+    paths: Sequence[Path],
+    exclude: Sequence[Path],
+    respect_gitignore: bool = True,
 ) -> Iterator[ReadFileTask]:
     """Expand the given paths into a list of `ReadFileTask`s (recursively)."""
     exclude_paths = {Path(ex).resolve() for ex in exclude}
@@ -59,11 +72,16 @@ def gather_read_file_tasks(
 
         # directory
         if path.is_dir():
+            gitignore_spec = _load_gitignore_spec(path) if respect_gitignore else None
             for file in path.rglob("*.py"):
                 file = file.resolve()
                 if any(file.is_relative_to(ex) for ex in exclude_paths):
                     continue
                 if file.is_symlink():
                     continue
+                if gitignore_spec is not None:
+                    rel = str(file.relative_to(path))
+                    if gitignore_spec.match_file(rel):
+                        continue
                 if _is_valid_file(file):
                     yield ReadFileTask(file)
