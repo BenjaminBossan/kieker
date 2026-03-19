@@ -164,8 +164,8 @@ class WriteToDbTask(ResultTask[None]):
             conn.execute(
                 """
                 INSERT INTO functions
-                (module_id, class_id, name, qualified_name, is_method, is_staticmethod, is_classmethod, is_property, is_async, file, start_line, start_col, end_line, end_col, body_text, def_text, property_kind, docstring)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (module_id, class_id, name, qualified_name, is_method, is_staticmethod, is_classmethod, is_property, is_async, file, start_line, start_col, end_line, end_col, body_text, def_text, property_kind, return_annotation_repr, docstring)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(module_id, qualified_name) DO UPDATE SET
                   class_id=excluded.class_id,
                   is_method=excluded.is_method,
@@ -181,6 +181,7 @@ class WriteToDbTask(ResultTask[None]):
                   body_text=excluded.body_text,
                   def_text=excluded.def_text,
                   property_kind=excluded.property_kind,
+                  return_annotation_repr=excluded.return_annotation_repr,
                   docstring=excluded.docstring
                 """,
                 (
@@ -201,6 +202,7 @@ class WriteToDbTask(ResultTask[None]):
                     f.body_text,
                     f.def_text,
                     f.property_kind,
+                    f.return_annotation_repr,
                     f.docstring,
                 ),
             )

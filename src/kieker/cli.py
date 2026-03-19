@@ -112,6 +112,17 @@ EXAMPLES: list[dict[str, str]] = [
         ).strip(),
     },
     {
+        "title": "Find functions missing a return type annotation",
+        "sql": textwrap.dedent(
+            """
+            SELECT f.qualified_name, f.file, f.start_line
+            FROM functions f
+            WHERE f.return_annotation_repr IS NULL
+            ORDER BY f.file, f.start_line;
+            """
+        ).strip(),
+    },
+    {
         "title": "Find all modules that import a specific package",
         "sql": textwrap.dedent(
             """

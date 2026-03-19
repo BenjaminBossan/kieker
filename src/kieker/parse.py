@@ -61,6 +61,7 @@ class FunctionInfo:
     def_text: str
     body_text: str
     property_kind: Optional[Literal["getter", "setter", "deleter"]]
+    return_annotation_repr: Optional[str] = None
     docstring: Optional[str] = None
 
 
@@ -546,6 +547,11 @@ class _ModuleCollector(cst.CSTVisitor):
             for name in dec_names
         )
 
+        # Return annotation
+        return_ann = None
+        if node.returns and isinstance(node.returns, cst.Annotation):
+            return_ann = self._get_code(node.returns.annotation)
+
         fn = FunctionInfo(
             name=node.name.value,
             qualified_name=qname,
@@ -558,6 +564,7 @@ class _ModuleCollector(cst.CSTVisitor):
             def_text="\n" + self._module.code_for_node(node).lstrip(),
             body_text="\n" + self._module.code_for_node(node.body),
             property_kind=property_kind,
+            return_annotation_repr=return_ann,
             docstring=doc,
         )
         self.functions.append(fn)

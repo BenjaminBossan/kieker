@@ -71,6 +71,37 @@ def test_function_written() -> None:
         assert row.is_async == 0
 
 
+def test_return_annotation() -> None:
+    """Return type annotations are parsed and persisted."""
+
+    code = """
+    def annotated(x: int) -> bool:
+        return x > 0
+
+    def unannotated(x):
+        return x
+
+    def returns_none() -> None:
+        pass
+
+    def returns_complex() -> list[tuple[str, int]]:
+        return []
+    """
+    with pipeline(code) as conn:
+        fns = {
+            row.qualified_name: row
+            for row in conn.execute(
+                "SELECT qualified_name, return_annotation_repr FROM functions"
+            ).fetchall()
+        }
+        assert fns["mod.annotated"].return_annotation_repr == "bool"
+        assert fns["mod.unannotated"].return_annotation_repr is None
+        assert fns["mod.returns_none"].return_annotation_repr == "None"
+        assert (
+            fns["mod.returns_complex"].return_annotation_repr == "list[tuple[str, int]]"
+        )
+
+
 def test_imports_and_calls() -> None:
     """Imports and calls are detected and stored."""
 

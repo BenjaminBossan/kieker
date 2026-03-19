@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS functions (
   body_text        TEXT NOT NULL,
   def_text         TEXT NOT NULL,
   property_kind    TEXT,
+  return_annotation_repr TEXT,
   docstring        TEXT
 );
 
