@@ -163,7 +163,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Exclude directory from ingestion (repeatable).",
     )
     p_create.add_argument(
-        "-o", "--output", type=Path, required=True, help="Path to output database."
+        "-o",
+        "--output",
+        type=Path,
+        help="Path to output database (required unless --dry-run).",
     )
     p_create.add_argument(
         "--schema",
@@ -233,7 +236,7 @@ class PlanResult:
 
 def create_plan(
     paths: list[Path],
-    output: Path,
+    output: Path | None = None,
     roots_str: list[str] | None = None,
     schema: Path | None = None,
     exclude: list[str] | None = None,
@@ -262,7 +265,7 @@ def create_plan(
         current[path] = t
 
     existing: dict[str, tuple[int, str, str]] = {}
-    if output.exists():
+    if output is not None and output.exists():
         conn = sqlite3.connect(output)
         try:
             for row in conn.execute(
@@ -344,6 +347,10 @@ def create(
 
 
 def cmd_create(args: argparse.Namespace) -> None:
+    if not args.dry_run and args.output is None:
+        logger.error("--output/-o is required unless --dry-run is used")
+        sys.exit(2)
+
     respect_gitignore = not args.no_gitignore
     plan = create_plan(
         paths=[Path(p) for p in args.paths],

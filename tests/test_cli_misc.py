@@ -12,7 +12,7 @@ from kieker.log import configure_logger
 
 def _make_create_args(
     paths: list[str],
-    output: Path,
+    output: Path | None,
     dry_run: bool,
 ) -> argparse.Namespace:
     return argparse.Namespace(
@@ -40,6 +40,31 @@ class TestCmdCreate:
             cmd_create(args)
         assert "Plan: 1 added, 0 modified, 0 deleted" in caplog.text
         assert not db.exists()
+
+    def test_dry_run_without_output(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # when using --dry-run, we don't need to indicate an output file
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "mod.py").write_text("def foo():\n    return 1\n")
+        args = _make_create_args([str(pkg)], None, True)
+        with caplog.at_level(logging.INFO):
+            cmd_create(args)
+        assert "1 added" in caplog.text
+
+    def test_no_output_without_dry_run_exits(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # when *not* using --dry-run, we *do* need to indicate an output file
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "mod.py").write_text("def foo():\n    return 1\n")
+        args = _make_create_args([str(pkg)], None, False)
+        with pytest.raises(SystemExit) as exc_info:
+            with caplog.at_level(logging.ERROR):
+                cmd_create(args)
+        assert exc_info.value.code == 2
 
     def test_executes(self, tmp_path: Path) -> None:
         pkg = tmp_path / "pkg"
