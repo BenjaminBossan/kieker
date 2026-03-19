@@ -1,64 +1,46 @@
 # AGENTS Instructions
 
-## Querying the code
-VERY IMPORTANT: Use kieker itself to query the code:
+## Code exploration
 
-```
-kieker create src/kieker -o code.sqlite
-# check modules
-sqlite3 -header -column code.sqlite "SELECT module, file from modules;"
-# project map of classes and functions
-kieker map code.sqlite
-# list a few examples
-kieker examples --list
+A kieker database is available at `code.sqlite`. Use it as your primary tool
+for navigating the codebase. If the database does not exist or is stale, create
+or refresh it:
+
+```sh
+kieker create src/ -o code.sqlite
 ```
 
-Only use `sed`, `cat`, `tail`, `grep` etc. if kieker does not work for the purpose.
+### When to use kieker instead of grep/find/cat
 
-Two examples:
+Use kieker when your question is about **structure or relationships**:
+- "Where is function X defined?" — query `functions`
+- "What calls function X?" — join `calls` on `functions`
+- "What does class Y inherit from?" — query `inheritance`
+- "Show me all methods of class Y" — query `functions` with `class_id`
+- "Which modules import package Z?" — query `imports`
+- "Find long functions without docstrings" — join `functions` with `function_metrics`
 
-If you search for the code of the function called `ResultTask`, instead of
+Fall back to grep/cat only for **textual searches** that aren't about code structure (e.g. searching inside string literals or comments).
 
-```
-$ rg "class ResultTask" src/kieker/*.py
-src/kieker/task.py
-48:class ResultTask(Generic[TResult]):
-$ sed -n '48,80p' src/kieker/task.py
-```
+### How to query
 
-do:
+Run queries with `sqlite3`:
 
-```
-$ sqlite3 code.sqlite "SELECT def_text
-FROM classes
-WHERE qualified_name like '%ResultTask';"
-```
-
-To find each instance in the code where the `configure_logger` function is being called, run:
-
-```
-$ sqlite3 -header -column code.sqlite \
-"SELECT f.file, c.start_line call_line, f.start_line fn_start, f.end_line fn_end, f.qualified_name fn_name
-FROM calls c
-JOIN functions f ON f.id = c.caller_id
-WHERE c.callee_repr = 'configure_logger'
-ORDER BY f.file, f.start_line;"
+```sh
+sqlite3 -header -column code.sqlite "<SQL>"
 ```
 
-Use the returned information to make targeted queries and changes to the code. If you need more examples, run `kieker examples --list` and follow from there.
+Before writing queries, inspect the schema to learn what tables and columns are available:
 
-## Development instructions
-- The source files and `schema.sql` are located in `src/kieker/`.
-- The tests are located in `tests/`.
-- Before committing, run `make checks` to format, lint, and type-check the code.
-- Document public APIs and use type annotations.
-- Prefer simple, functional code, isolate the non-functional part (e.g. to the CLI).
-- Even with YAGNI, prefer code that is easy to change and extend in the future.
+```sh
+sqlite3 code.sqlite ".schema"
+```
 
-## Test instructions
-- Run `pytest tests` to execute the test suite.
-- Check if the newly added code is covered by inspecting the code coverage report.
+Use `kieker examples --list` for example queries, then adapt them to your needs. The examples are templates — change the WHERE clauses, add JOINs, and combine tables to answer the specific question at hand.
 
-## PR instructions
-- Summarize changes and list tests run in PR descriptions.
-- If the solution is non-trivial, the PR description should elaborate on why it was chosen and not something else.
+### Workflow tips
+
+- **Compose queries freely.** The schema is a normalized relational database. Any JOIN that makes sense in SQL is valid. Do not limit yourself to the examples — write the query that answers your question.
+- **Use `def_text` to read code.** Instead of `cat file.py | sed -n '10,30p'`, query `SELECT def_text FROM functions WHERE qualified_name LIKE '%my_func'`. This returns exactly the function body with no manual line-range math.
+- **Chain queries.** Use the output of one query (e.g. a `qualified_name`) as input to the next. For example: find a class, then find all calls within its methods, then read the callee's source.
+- **Re-query after edits.** If you modify source files, run `kieker create src/ -o code.sqlite` again — it only re-parses changed files.
